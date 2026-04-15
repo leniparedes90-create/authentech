@@ -1,0 +1,138 @@
+[build]
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+[build.environment]
+  NODE_VERSION = "18"
+
+# Google Sheets proxy
+[[redirects]]
+  from = "/api/sheets"
+  to = "https://script.google.com/macros/s/AKfycbzFFp4GbgS3ykVzSOqJzbhZIOFx8i7GNBHvLHJelhJmUnzA4JPWu0e46i1ESi-RCNDJ/exec"
+  status = 200
+  force = true
+
+# Product URLs
+[[redirects]]
+  from = "/adobe-cc-1mes"
+  to = "/#adobe-cc-1mes"
+  status = 301
+
+[[redirects]]
+  from = "/adobe-cc-3meses"
+  to = "/#adobe-cc-3meses"
+  status = 301
+
+[[redirects]]
+  from = "/adobe-cc-6meses"
+  to = "/#adobe-cc-6meses"
+  status = 301
+
+[[redirects]]
+  from = "/adobe-cc-12meses"
+  to = "/#adobe-cc-12meses"
+  status = 301
+
+[[redirects]]
+  from = "/canva-pro"
+  to = "/#canva-pro"
+  status = 301
+
+[[redirects]]
+  from = "/office-365"
+  to = "/#office-365"
+  status = 301
+
+[[redirects]]
+  from = "/chatgpt"
+  to = "/#chatgpt"
+  status = 301
+
+[[redirects]]
+  from = "/windows-11"
+  to = "/#windows-11"
+  status = 301
+
+# Checkout URLs - NO force so Netlify Functions still work
+[[redirects]]
+  from = "/checkout/*"
+  to = "/index.html"
+  status = 200
+
+[[redirects]]
+  from = "/checkout-adobe-cc-1mes"
+  to = "/#checkout-adobe-cc-1mes"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-adobe-cc-3meses"
+  to = "/#checkout-adobe-cc-3meses"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-adobe-cc-6meses"
+  to = "/#checkout-adobe-cc-6meses"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-adobe-cc-12meses"
+  to = "/#checkout-adobe-cc-12meses"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-canva-pro"
+  to = "/#checkout-canva-pro"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-office-365"
+  to = "/#checkout-office-365"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-capcut-pro"
+  to = "/#checkout-capcut-pro"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-chatgpt-go"
+  to = "/#checkout-chatgpt-go"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-chatgpt-plus"
+  to = "/#checkout-chatgpt-plus"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-chatgpt-pro"
+  to = "/#checkout-chatgpt-pro"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-windows-11-home"
+  to = "/#checkout-windows-11-home"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-windows-11-pro"
+  to = "/#checkout-windows-11-pro"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-autodesk"
+  to = "/#checkout-autodesk"
+  status = 302
+
+[[redirects]]
+  from = "/checkout-eset-nod32"
+  to = "/#checkout-eset-nod32"
+  status = 302
+
+# SPA fallback - MUST be last, NO force
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

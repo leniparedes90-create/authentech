@@ -1,0 +1,37 @@
+# Google Sheets proxy
+/api/sheets  https://script.google.com/macros/s/AKfycbzFFp4GbgS3ykVzSOqJzbhZIOFx8i7GNBHvLHJelhJmUnzA4JPWu0e46i1ESi-RCNDJ/exec  200!
+
+# Product URLs → main page with hash
+/adobe-cc-1mes     /#adobe-cc-1mes     301
+/adobe-cc-3meses   /#adobe-cc-3meses   301
+/adobe-cc-6meses   /#adobe-cc-6meses   301
+/adobe-cc-12meses  /#adobe-cc-12meses  301
+/canva-pro         /#canva-pro         301
+/office-365        /#office-365        301
+/chatgpt           /#chatgpt           301
+/windows-11        /#windows-11        301
+
+# Confirm page
+/confirm           /#confirm           301
+
+# ── Checkout direct links (rewrite: keeps clean URL in browser) ──
+/checkout/*        /index.html         200!
+
+# ── Checkout flat URLs (backup) ──
+/checkout-adobe-cc-1mes      /#checkout-adobe-cc-1mes      302
+/checkout-adobe-cc-3meses    /#checkout-adobe-cc-3meses    302
+/checkout-adobe-cc-6meses    /#checkout-adobe-cc-6meses    302
+/checkout-adobe-cc-12meses   /#checkout-adobe-cc-12meses   302
+/checkout-canva-pro          /#checkout-canva-pro           302
+/checkout-office-365         /#checkout-office-365          302
+/checkout-capcut-pro         /#checkout-capcut-pro          302
+/checkout-chatgpt-go         /#checkout-chatgpt-go          302
+/checkout-chatgpt-plus       /#checkout-chatgpt-plus        302
+/checkout-chatgpt-pro        /#checkout-chatgpt-pro         302
+/checkout-windows-11-home    /#checkout-windows-11-home     302
+/checkout-windows-11-pro     /#checkout-windows-11-pro      302
+/checkout-autodesk           /#checkout-autodesk            302
+/checkout-eset-nod32         /#checkout-eset-nod32          302
+
+# SPA fallback (must be last)
+/*                 /index.html         200
