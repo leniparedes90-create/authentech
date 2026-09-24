@@ -401,7 +401,7 @@ function drawMeter(cv, st, vals, labels){
     if (st.pk[i] > .01){ g.fillStyle = '#e8e8e8'; g.fillRect(x, h - st.pk[i] * h, bw, 1); }
   });
   if (labels){
-    g.fillStyle = '#6f6f6f'; g.font = '8px Inter, sans-serif'; g.textAlign = 'right';
+    g.fillStyle = '#6f6f6f'; g.font = '600 8px "Source Sans 3", "Segoe UI", sans-serif'; g.textAlign = 'right';
     for (const db of [0,-6,-12,-18,-24,-30,-36,-42,-48,-54]){ const y = h - (db + 60) / 60 * h; g.fillText(String(db), w, clamp(y + 3, 7, h - 2)); }
   }
 }

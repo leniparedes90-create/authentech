@@ -657,7 +657,7 @@ function drawScopes(){
   const sg = SCS.getContext('2d', {willReadFrequently:true}); sg.drawImage(CV, 0, 0, SCS.width, SCS.height);
   const d = sg.getImageData(0, 0, SCS.width, SCS.height).data, SW = SCS.width, SH = SCS.height;
   const mode = $('#scopeMode').value, pad = 26, gw = w - pad - 8, gh = h - 16;
-  g.font = '9px Inter, sans-serif'; g.fillStyle = '#666'; g.strokeStyle = '#2a2a2a'; g.lineWidth = 1;
+  g.font = '600 9px "Source Sans 3", "Segoe UI", sans-serif'; g.fillStyle = '#666'; g.strokeStyle = '#2a2a2a'; g.lineWidth = 1;
   if (mode === 'vector'){
     const R = Math.min(w, h) / 2 - 12, cx = w / 2, cy = h / 2;
     g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.moveTo(cx - R, cy); g.lineTo(cx + R, cy); g.moveTo(cx, cy - R); g.lineTo(cx, cy + R); g.stroke();

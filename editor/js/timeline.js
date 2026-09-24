@@ -68,7 +68,7 @@ function renderTimeline(){
     const label = c.kind === 'text' ? (c.props.text || 'Título').split('\n')[0] : isNest(c) ? ((S.seqs.find(s => s.id === c.nestId) || {}).name || 'Secuencia') : (m ? m.name : 'Medio');
     const fxd = c.fx.length > 0 || Object.keys(c.kf).some(k => c.kf[k].length) || spd(c) !== 1;
     let html = `<div class="clabel"><span class="fxb${fxd ? ' on' : ''}">fx</span><span class="nmx">${c.link ? '<u>' : ''}${esc(label)}${c.link ? '</u>' : ''}${spd(c) !== 1 ? ` [${Math.round(spd(c) * 100)}%]` : ''}${m && m.offline ? ' (sin conexión)' : ''}</span></div>`;
-    if ((c.kind === 'video' || c.kind === 'image') && m && m.thumb && px > 30) html += `<div class="cthumb" style="background-image:url(${m.thumb})"></div>`;
+    if ((c.kind === 'video' || c.kind === 'image') && m && m.thumb && px > 30){ html += `<div class="cthumb" style="background-image:url(${m.thumb})"></div>`; if (px > 150) html += `<div class="cthumb tail" style="background-image:url(${m.thumb})"></div>`; }
     if (c.tIn) html += transHTML(c, 'in');
     if (c.tOut && !nextOf(c)) html += transHTML(c, 'out');
     html += '<div class="ch l"></div><div class="ch r"></div>';
@@ -130,7 +130,7 @@ function drawRuler(){
     g.fillStyle = 'rgba(74,163,255,.2)'; g.fillRect(a, 0, b - a, h);
     g.fillStyle = '#4aa3ff'; if (S.seqIn != null) g.fillRect(a, 0, 2, h); if (S.seqOut != null) g.fillRect(b - 2, 0, 2, h);
   }
-  g.strokeStyle = '#5a5a5a'; g.fillStyle = '#9a9a9a'; g.font = '10px "Roboto Mono", monospace'; g.lineWidth = 1;
+  g.strokeStyle = '#4c4c4c'; g.fillStyle = '#9b9b9b'; g.font = '600 10px "Source Sans 3", "Segoe UI", sans-serif'; g.lineWidth = 1;
   const i0 = Math.floor(sl / z / stp);
   g.beginPath();
   for (let i = i0; ; i++){
@@ -145,9 +145,9 @@ function drawRuler(){
   }
   const px = S.t * z - sl;
   if (px >= -8 && px <= w + 8){
-    g.fillStyle = '#2d8ceb';
+    g.fillStyle = '#378ef0'; g.shadowColor = 'rgba(55,142,240,.7)'; g.shadowBlur = 6;
     g.beginPath(); g.moveTo(px - 6, 13); g.lineTo(px + 6, 13); g.lineTo(px + 6, 21); g.lineTo(px, 27); g.lineTo(px - 6, 21); g.closePath(); g.fill();
-    g.fillRect(px - .5, 27, 1, 3);
+    g.fillRect(px - .5, 27, 1, 3); g.shadowBlur = 0; g.shadowColor = 'transparent';
   }
 }
 function updatePlayhead(){
