@@ -144,8 +144,9 @@ function setColor(color){ edit(() => [...S.sel].map(clip).forEach(c => { if (c &
 function addTitle(at, track, x, y, setup, label){
   const t = q(at ?? S.t);
   let tr = track && !S.tracks[track].lock ? track : null;
-  if (!tr) tr = ['V2','V3','V1'].find(id => !S.tracks[id].lock && !S.clips.some(c => c.track === id && t < cend(c) && t + 5 > c.start))
-    || ['V2','V3','V1'].find(id => !S.tracks[id].lock);
+  const order = [...videoIds()].reverse(); if (order.length > 1) order.push(order.shift()); // V2, V3…, y V1 al final
+  if (!tr) tr = order.find(id => !S.tracks[id].lock && !S.clips.some(c => c.track === id && t < cend(c) && t + 5 > c.start))
+    || order.find(id => !S.tracks[id].lock);
   if (!tr){ toast('Todas las pistas de vídeo están bloqueadas'); return null; }
   let c = null;
   edit(() => {
@@ -356,11 +357,11 @@ function insertFromSource(over){
 }
 function placeMedia(mid, row, t, insert, range){
   const m = media(mid); if (!m || m.offline) return;
-  const n = TRACKS[clamp(row, 0, 5)].id[1];
+  const n = TRACKS[clamp(row, 0, TRACKS.length - 1)].id.slice(1);
   const st = q(snapTime(Math.max(0, t), new Set()).t);
   const inP = range ? range.in : 0, outP = range ? range.out : null;
   edit(() => {
-    const cs = makeClips(m, st, 'V' + n, 'A' + n, inP, outP).filter(c => !S.tracks[c.track].lock);
+    const cs = makeClips(m, st, S.tracks['V' + n] ? 'V' + n : 'V1', S.tracks['A' + n] ? 'A' + n : 'A1', inP, outP).filter(c => !S.tracks[c.track].lock);
     if (!cs.length) return;
     if (insert){ const d = cs[0].dur; splitAllAt(st); for (const c of S.clips) if (!S.tracks[c.track].lock && c.start >= st - 1e-6) c.start = q(c.start + d); }
     S.clips.push(...cs); if (!insert) overwrite(cs.map(c => c.id));
@@ -442,3 +443,58 @@ function nudge(n){
   if (minS + d < 0) return;
   edit(() => { cs.forEach(c => c.start = q(c.start + d)); overwrite(cs.map(c => c.id)); }, 'Desplazar clip');
 }
+
+/* ================================ pistas ================================ */
+function addTracks(nv, na){
+  if (!(nv > 0 || na > 0)) return;
+  edit(() => {
+    let v = VROWS.length, a = AROWS.length;
+    for (let i = 0; i < nv; i++) S.tracks['V' + (++v)] = TRACK_DEF();
+    for (let i = 0; i < na; i++) S.tracks['A' + (++a)] = TRACK_DEF();
+    layoutTracks();
+  }, 'Añadir pistas');
+  buildTracks(); buildMixer(); renderTimeline();
+  status(`Pistas: ${VROWS.length} de vídeo, ${AROWS.length} de audio`);
+}
+function addTracksDialog(){
+  modal('Añadir pistas', `<div class="row"><label style="flex:1">Pistas de vídeo<input id="atV" type="number" min="0" max="20" value="1"></label><label style="flex:1">Pistas de audio<input id="atA" type="number" min="0" max="20" value="0"></label></div>`,
+    [['Cancelar'], ['Aceptar', m => addTracks(clamp(+m.querySelector('#atV').value || 0, 0, 20), clamp(+m.querySelector('#atA').value || 0, 0, 20)), true]]);
+}
+// Renumera las pistas de un tipo según `keep` (lista de números antiguos en orden) y mueve sus clips
+function renumberTracks(p, keep){
+  const old = {}; keep.forEach(n => old[n] = S.tracks[p + n]);
+  const map = {}; keep.forEach((n, i) => map[p + n] = p + (i + 1));
+  for (const k of Object.keys(S.tracks)) if (k[0] === p) delete S.tracks[k];
+  keep.forEach((n, i) => S.tracks[p + (i + 1)] = old[n]);
+  S.clips.forEach(c => { if (map[c.track]) c.track = map[c.track]; });
+  layoutTracks();
+}
+function deleteTrack(id){
+  const p = id[0], nums = (p === 'V' ? VROWS : AROWS).map(i => +TRACKS[i].id.slice(1)).sort((a, b) => a - b);
+  if (nums.length <= 1) return toast('Debe quedar al menos una pista de ' + (p === 'V' ? 'vídeo' : 'audio'));
+  const used = S.clips.filter(c => c.track === id).length;
+  if (used && !confirm(`La pista ${id} tiene ${used} clip(s). ¿Eliminarla junto con sus clips?`)) return;
+  edit(() => {
+    S.clips = S.clips.filter(c => c.track !== id);
+    renumberTracks(p, nums.filter(n => n !== +id.slice(1)));
+    S.sel = new Set([...S.sel].filter(x => clip(x)));
+  }, 'Eliminar pista');
+  buildTracks(); buildMixer(); renderTimeline();
+}
+function deleteEmptyTracks(){
+  edit(() => {
+    for (const p of ['V', 'A']){
+      const nums = (p === 'V' ? VROWS : AROWS).map(i => +TRACKS[i].id.slice(1)).sort((a, b) => a - b);
+      let keep = nums.filter(n => S.clips.some(c => c.track === p + n));
+      if (!keep.length) keep = [nums[0]];
+      renumberTracks(p, keep);
+    }
+  }, 'Eliminar pistas vacías');
+  buildTracks(); buildMixer(); renderTimeline();
+}
+function renameTrack(id){
+  const st = S.tracks[id]; if (!st) return;
+  modal('Cambiar nombre de la pista', `<label>Nombre<input id="rtN" value="${esc(st.name || '')}" placeholder="${isV(id) ? 'Vídeo' : 'Audio'} ${id.slice(1)}"></label>`,
+    [['Cancelar'], ['Aceptar', m => { st.name = m.querySelector('#rtN').value.trim(); buildTracks(); scheduleSave(); }, true]]);
+}
+function setTrackHeight(id, h){ const st = S.tracks[id]; if (!st) return; st.h = clamp(Math.round(h), 30, 220); buildTracks(); renderTimeline(); scheduleSave(); }

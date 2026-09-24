@@ -56,6 +56,7 @@ const MENUS = {
     ['Ajustar al tamaño del fotograma', '', () => scaleToFrame(false)], ['Rellenar el fotograma', '', () => scaleToFrame(true)]],
   'Secuencia': [
     ['Ajustes de secuencia…', '', seqSettings], '-',
+    ['Añadir pistas…', '', addTracksDialog], ['Eliminar pistas vacías', '', deleteEmptyTracks], '-',
     ['Añadir edición', 'Ctrl+K', () => splitAtPlayhead(false)], ['Añadir edición a todas las pistas', 'Ctrl+Mayús+K', () => splitAtPlayhead(true)],
     ['Aplicar transición de vídeo', 'Ctrl+D', () => applyDefaultTransitions('v')], ['Aplicar transición de audio', 'Ctrl+Mayús+D', () => applyDefaultTransitions('a')],
     ['Aplicar transiciones predeterminadas a la selección', 'Mayús+D', () => applyDefaultTransitions('both')], '-',

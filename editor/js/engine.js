@@ -13,12 +13,17 @@ function ensureAudio(){
   anL = AC.createAnalyser(); anR = AC.createAnalyser(); anL.fftSize = anR.fftSize = 2048;
   sp.connect(anL, 0); sp.connect(anR, 1);
   recDest = AC.createMediaStreamDestination(); master.connect(recDest);
-  for (const i of AROWS){
-    const id = TRACKS[i].id, g = AC.createGain(), pan = AC.createStereoPanner(), an = AC.createAnalyser();
+  return AC;
+}
+// Nodo de pista de audio (se crea al primer uso; las pistas pueden añadirse en cualquier momento)
+function trkNode(id){
+  if (!AC) return null;
+  if (!TRK[id]){
+    const g = AC.createGain(), pan = AC.createStereoPanner(), an = AC.createAnalyser();
     an.fftSize = 1024; g.connect(pan); pan.connect(an); an.connect(master);
     TRK[id] = {g, pan, an};
   }
-  return AC;
+  return TRK[id];
 }
 
 /* ============================ elementos multimedia ============================ */
@@ -38,9 +43,10 @@ function elFor(c){
   ELS.set(c.id, r); return r;
 }
 function routeTrack(r, tid){
-  if (!r.pan || !TRK[tid] || r.route === tid) return;
+  if (!r.pan || r.route === tid) return;
+  const n = trkNode(tid); if (!n) return;
   try { r.pan.disconnect(); } catch(e){}
-  r.pan.connect(TRK[tid].g); r.route = tid;
+  r.pan.connect(n.g); r.route = tid;
 }
 function dropEl(id){
   const r = ELS.get(id); if (!r) return;
@@ -68,7 +74,7 @@ function sync(){
   if (AC){
     const anySolo = AROWS.some(i => S.tracks[TRACKS[i].id].solo);
     for (const i of AROWS){
-      const id = TRACKS[i].id, tr = S.tracks[id], n = TRK[id]; if (!n) continue;
+      const id = TRACKS[i].id, tr = S.tracks[id], n = trkNode(id); if (!n) continue;
       n.g.gain.value = (tr.mute || (anySolo && !tr.solo)) ? 0 : tr.vol; n.pan.pan.value = clamp(tr.pan, -1, 1);
     }
     master.gain.value = S.master.vol;
@@ -122,7 +128,7 @@ function draw(){
   g.setTransform(sc, 0, 0, sc, 0, 0); g.globalAlpha = 1; g.filter = 'none'; g.globalCompositeOperation = 'source-over';
   g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0;
   g.fillStyle = '#000'; g.fillRect(0, 0, S.seq.w, S.seq.h);
-  for (const tid of ['V1','V2','V3']){
+  for (const tid of [...videoIds()].reverse()){
     if (S.tracks[tid].hide) continue;
     const cur = S.clips.find(c => c.track === tid && !c.disabled && S.t >= c.start && S.t < cend(c));
     if (!cur) continue;

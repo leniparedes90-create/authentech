@@ -514,7 +514,7 @@ function buildMixer(){
     const d = document.createElement('div'); d.className = 'strip' + (isM ? ' master' : ''); d.dataset.id = id;
     d.innerHTML = (isM ? '<div class="pv"></div><div class="pv"></div><div class="mb"></div>'
         : `<input type="range" class="pan" min="-100" max="100" step="1" value="${Math.round(st.pan * 100)}" title="Panorámica (doble clic para centrar)"><div class="pv">${panStr(st.pan)}</div><div class="mb"><button class="tb mu${st.mute ? ' on' : ''}" title="Silenciar pista">M</button><button class="tb so${st.solo ? ' on' : ''}" title="Pista solo">S</button></div>`) +
-      `<div class="fz"><canvas class="smeter"></canvas><input type="range" class="vf" min="0" max="200" step="1" value="${Math.round(st.vol * 100)}" title="Volumen (doble clic: 0 dB)"></div><div class="db">${dbStr(st.vol)}</div><div class="nm">${isM ? 'Mezcla' : 'Audio ' + id[1]}</div>`;
+      `<div class="fz"><canvas class="smeter"></canvas><input type="range" class="vf" min="0" max="200" step="1" value="${Math.round(st.vol * 100)}" title="Volumen (doble clic: 0 dB)"></div><div class="db">${dbStr(st.vol)}</div><div class="nm">${isM ? 'Mezcla' : (S.tracks[id].name || 'Audio ' + id.slice(1))}</div>`;
     const vf = d.querySelector('.vf');
     vf.oninput = () => { st.vol = vf.value / 100; d.querySelector('.db').textContent = dbStr(st.vol); scheduleSave(); };
     vf.ondblclick = () => { vf.value = 100; vf.oninput(); };
@@ -584,7 +584,7 @@ function startMaskDrag(e, corner){
 }
 function hitTest(e){
   const {s, ox, oy} = monitorGeom(), x = (e.clientX - ox) / s, y = (e.clientY - oy) / s;
-  for (const tid of ['V3','V2','V1']){
+  for (const tid of videoIds()){
     if (S.tracks[tid].hide) continue;
     const c = S.clips.find(k => k.track === tid && !k.disabled && S.t >= k.start && S.t < cend(k)); if (!c) continue;
     const b = clipBounds(c, S.t); if (!b) continue;

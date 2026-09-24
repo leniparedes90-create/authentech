@@ -2,8 +2,9 @@
 /* AuthenCut Pro · núcleo: constantes, estado, utilidades, historial, medios y proyecto */
 
 const FPS = 30, TH = 46;
-const TRACKS = [{id:'V3'},{id:'V2'},{id:'V1'},{id:'A1'},{id:'A2'},{id:'A3'}];
-const VROWS = [0,1,2], AROWS = [3,4,5];
+// Pistas dinámicas: TRACKS se reconstruye con layoutTracks() a partir de S.tracks (V arriba, A abajo)
+let TRACKS = [], VROWS = [], AROWS = [];
+const TRACK_DEF = () => ({hide:false, mute:false, solo:false, lock:false, vol:1, pan:0, h:46, name:''});
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -12,9 +13,10 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':
 let UID = Date.now() % 1e6;
 const nid = (p = 'c') => p + (UID++).toString(36);
 
-function freshTracks(){
+function freshTracks(nv = 3, na = 3){
   const o = {};
-  TRACKS.forEach(tr => o[tr.id] = {hide:false, mute:false, solo:false, lock:false, vol:1, pan:0});
+  for (let i = 1; i <= nv; i++) o['V' + i] = TRACK_DEF();
+  for (let i = 1; i <= na; i++) o['A' + i] = TRACK_DEF();
   return o;
 }
 const S = {
@@ -41,6 +43,17 @@ const visual = c => c.kind !== 'audio';
 const srcDurOf = m => m.type === 'image' ? 5 : m.duration;
 const prevOf = c => S.clips.find(o => o !== c && o.track === c.track && Math.abs(cend(o) - c.start) < 1e-3);
 const nextOf = c => S.clips.find(o => o !== c && o.track === c.track && Math.abs(o.start - cend(c)) < 1e-3);
+function layoutTracks(){
+  const ids = Object.keys(S.tracks);
+  const vs = ids.filter(isV).map(id => +id.slice(1)).sort((a, b) => b - a), as = ids.filter(id => !isV(id)).map(id => +id.slice(1)).sort((a, b) => a - b);
+  TRACKS = [...vs.map(n => ({id:'V' + n})), ...as.map(n => ({id:'A' + n}))];
+  VROWS = vs.map((_, i) => i); AROWS = as.map((_, i) => vs.length + i);
+}
+const rowH = i => (TRACKS[i] && S.tracks[TRACKS[i].id].h) || TH;
+function rowTop(i){ let y = 0; for (let k = 0; k < i; k++) y += rowH(k); return y; }
+function rowAt(y){ let acc = 0; for (let i = 0; i < TRACKS.length; i++){ acc += rowH(i); if (y < acc) return i; } return TRACKS.length; }
+const videoIds = () => VROWS.map(i => TRACKS[i].id);   // de arriba (Vn) a abajo (V1)
+layoutTracks();
 
 function tc(t){
   const f = Math.floor(Math.max(0, t) * FPS + 1e-6);
@@ -205,7 +218,7 @@ function closeCtx(){ const m = $('#ctx'); if (m) m.remove(); }
 
 /* ================================== historial ================================== */
 const UNDO = [], REDO = [];
-const snap = () => JSON.stringify({c:S.clips, m:S.markers, i:S.seqIn, o:S.seqOut});
+const snap = () => JSON.stringify({c:S.clips, m:S.markers, i:S.seqIn, o:S.seqOut, tl:Object.fromEntries(Object.entries(S.tracks).map(([k, v]) => [k, {h:v.h, name:v.name}]))});
 function commit(before, label){
   if (before === snap()) return false;
   UNDO.push({s:before, label:label || 'Editar'}); if (UNDO.length > 300) UNDO.shift();
@@ -215,6 +228,12 @@ function edit(fn, label){ const b = snap(); const r = fn(); cleanLinks(); commit
 function restore(s){
   const d = JSON.parse(s);
   S.clips = d.c.map(normalizeClip); S.markers = d.m || []; S.seqIn = d.i ?? null; S.seqOut = d.o ?? null;
+  if (d.tl){
+    const same = Object.keys(d.tl).sort().join() === Object.keys(S.tracks).sort().join();
+    for (const k in S.tracks) if (!d.tl[k]) delete S.tracks[k];
+    for (const k in d.tl) S.tracks[k] = Object.assign(S.tracks[k] || TRACK_DEF(), d.tl[k]);
+    layoutTracks(); if (!same){ buildTracks(); buildMixer(); } else buildTracks();
+  }
   let back = false;
   for (const c of S.clips) if (c.mediaId && !media(c.mediaId) && TRASH.has(c.mediaId)){ S.media.push(TRASH.get(c.mediaId)); TRASH.delete(c.mediaId); back = true; }
   if (back) renderProject();
@@ -325,7 +344,10 @@ function load(d){
   S.seqIn = d.seqIn ?? null; S.seqOut = d.seqOut ?? null;
   S.sel.clear(); S.selTrans = null; S.gap = null; S.t = 0; S.projSel = null; S.primary = null; S.clipboard = null; TRASH.clear();
   if (typeof ivSel !== 'undefined') ivSel.clear();
-  S.tracks = freshTracks(); if (d.tracks) for (const k in S.tracks) if (d.tracks[k]) Object.assign(S.tracks[k], d.tracks[k]);
+  S.tracks = d.tracks ? {} : freshTracks();
+  if (d.tracks) for (const k in d.tracks) if (/^[VA]\d+$/.test(k)) S.tracks[k] = Object.assign(TRACK_DEF(), d.tracks[k]);
+  for (const k of ['V1', 'A1', ...S.clips.map(c => c.track)]) if (!S.tracks[k]) S.tracks[k] = TRACK_DEF();
+  layoutTracks();
   S.master = Object.assign({vol:1}, d.master || {});
   $('#projName').value = d.name || 'Proyecto sin título'; syncName();
   S.seq = d.seq || {w:1920, h:1080};

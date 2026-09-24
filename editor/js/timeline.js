@@ -11,10 +11,10 @@ function buildTracks(){
     const st = S.tracks[tr.id], v = isV(tr.id), sepa = tr.id === 'V1';
     const row = document.createElement('div');
     row.className = `trow ${v ? 'v' : 'a'}${sepa ? ' sepa' : ''}${st.lock ? ' lock' : ''}`;
-    row.style.top = i * TH + 'px';
+    row.style.top = rowTop(i) + 'px'; row.style.height = rowH(i) + 'px';
     inner.prepend(row);
-    const h = document.createElement('div'); h.className = 'head' + (sepa ? ' sepa' : '');
-    h.innerHTML = `<button class="tb lk${st.lock ? ' on' : ''}" title="Alternar bloqueo de pista">${ICON.lock}</button><div class="tn">${tr.id}</div><span class="nm">${v ? 'Vídeo' : 'Audio'} ${tr.id[1]}</span><span class="sp"></span>` +
+    const h = document.createElement('div'); h.className = 'head' + (sepa ? ' sepa' : ''); h.style.height = rowH(i) + 'px';
+    h.innerHTML = `<button class="tb lk${st.lock ? ' on' : ''}" title="Alternar bloqueo de pista">${ICON.lock}</button><div class="tn">${tr.id}</div><span class="nm" title="${esc(st.name || '')}">${esc(st.name || (v ? 'Vídeo ' : 'Audio ') + tr.id.slice(1))}</span><span class="sp"></span>` +
       (v ? `<button class="tb ey${st.hide ? ' off' : ' on'}" title="Alternar salida de pista">${ICON.eye}</button>`
          : `<button class="tb mu${st.mute ? ' on' : ''}" title="Silenciar pista">M</button><button class="tb so${st.solo ? ' on' : ''}" title="Pista solo">S</button>`);
     h.querySelector('.lk').onclick = () => { st.lock = !st.lock; buildTracks(); renderTimeline(); };
@@ -23,9 +23,25 @@ function buildTracks(){
       h.querySelector('.mu').onclick = () => { st.mute = !st.mute; buildTracks(); buildMixer(); };
       h.querySelector('.so').onclick = () => { st.solo = !st.solo; buildTracks(); buildMixer(); };
     }
+    const rz = document.createElement('div'); rz.className = 'rsz'; rz.title = 'Arrastra para cambiar la altura de la pista'; h.appendChild(rz);
+    rz.onmousedown = e => {
+      e.preventDefault(); e.stopPropagation(); const y0 = e.clientY, h0 = st.h || TH;
+      const mv = ev => { st.h = clamp(Math.round(h0 + ev.clientY - y0), 30, 220); buildTracks(); renderTimeline(); };
+      const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); scheduleSave(); };
+      window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
+    };
+    h.ondblclick = e => { if (!e.target.closest('button')) setTrackHeight(tr.id, (st.h || TH) > TH ? TH : 100); };
+    h.oncontextmenu = e => {
+      e.preventDefault();
+      ctxMenu(e.clientX, e.clientY, [
+        ['Añadir pista de vídeo', '', () => addTracks(1, 0)], ['Añadir pista de audio', '', () => addTracks(0, 1)], ['Añadir pistas…', '', addTracksDialog], '-',
+        ['Cambiar nombre…', '', () => renameTrack(tr.id)],
+        [(st.h || TH) > TH ? 'Contraer pista' : 'Expandir pista', '', () => setTrackHeight(tr.id, (st.h || TH) > TH ? TH : 100)], '-',
+        ['Eliminar pista', '', () => deleteTrack(tr.id)], ['Eliminar pistas vacías', '', deleteEmptyTracks]]);
+    };
     heads.appendChild(h);
   });
-  inner.style.height = TRACKS.length * TH + 'px';
+  inner.style.height = rowTop(TRACKS.length) + 'px';
   scheduleSave();
 }
 
@@ -47,7 +63,7 @@ function renderTimeline(){
     const d = document.createElement('div');
     d.className = `clip k-${c.kind}${sel ? ' sel' : ''}${S.tracks[c.track].lock ? ' locked' : ''}${m && m.offline ? ' off' : ''}${c.disabled ? ' dis' : ''}`;
     d.dataset.id = c.id;
-    d.style.left = c.start * S.zoom + 'px'; d.style.width = Math.max(3, px) + 'px'; d.style.top = row * TH + 'px';
+    d.style.left = c.start * S.zoom + 'px'; d.style.width = Math.max(3, px) + 'px'; d.style.top = rowTop(row) + 'px'; d.style.height = (rowH(row) - 2) + 'px';
     if (c.color) d.style.background = sel ? lighten(c.color) : c.color;
     const label = c.kind === 'text' ? (c.props.text || 'Título').split('\n')[0] : (m ? m.name : 'Medio');
     const fxd = c.fx.length > 0 || Object.keys(c.kf).some(k => c.kf[k].length) || spd(c) !== 1;
@@ -62,7 +78,7 @@ function renderTimeline(){
   }
   if (S.gap){
     const g = document.createElement('div'); g.className = 'gapsel';
-    g.style.left = S.gap.a * S.zoom + 'px'; g.style.width = (S.gap.b - S.gap.a) * S.zoom + 'px'; g.style.top = rowOf(S.gap.track) * TH + 'px';
+    g.style.left = S.gap.a * S.zoom + 'px'; g.style.width = (S.gap.b - S.gap.a) * S.zoom + 'px'; g.style.top = rowTop(rowOf(S.gap.track)) + 'px'; g.style.height = (rowH(rowOf(S.gap.track)) - 2) + 'px';
     frag.appendChild(g);
   }
   inner.appendChild(frag);
@@ -73,7 +89,7 @@ function renderTimeline(){
   renderEffects(); renderInfo(); updatePlayhead();
 }
 function drawWave(cv, c, m, px){
-  const w = Math.min(Math.max(1, Math.round(px)), 6000), h = TH - 18;
+  const w = Math.min(Math.max(1, Math.round(px)), 6000), h = Math.max(10, rowH(rowOf(c.track)) - 18);
   cv.width = w; cv.height = h; cv.style.width = px + 'px'; cv.style.height = h + 'px';
   const g = cv.getContext('2d'), mid = h / 2, s = spd(c);
   if (m && m.peaks){
@@ -166,7 +182,7 @@ function zoomFit(){ setZoom((tracksEl.clientWidth - 40) / Math.max(seqEnd(), 5))
 
 /* ================================ interacción ================================ */
 let drag = null;
-function posFrom(e){ const r = inner.getBoundingClientRect(); return {row: Math.floor((e.clientY - r.top) / TH), t: (e.clientX - r.left) / S.zoom}; }
+function posFrom(e){ const r = inner.getBoundingClientRect(); return {row: rowAt(e.clientY - r.top), t: (e.clientX - r.left) / S.zoom}; }
 function linkedIds(c, e){
   const ids = [c.id];
   if (c.link && !e.altKey && S.linkedSel) S.clips.forEach(o => { if (o.link === c.link && o !== c) ids.push(o.id); });
@@ -254,7 +270,7 @@ function startSlip(e, c){
     orig: linkedIds(c, e).map(id => ({id, in:clip(id).in}))};
 }
 function onVolLine(e, cEl, c){
-  const r = cEl.getBoundingClientRect(), h = TH - 18, y = e.clientY - r.top - 15;
+  const r = cEl.getBoundingClientRect(), h = Math.max(10, rowH(rowOf(c.track)) - 18), y = e.clientY - r.top - 15;
   return Math.abs(y - (h - clamp(c.props.volume / 200, 0, 1) * h)) < 5;
 }
 function dragAlive(){
@@ -274,7 +290,7 @@ function onMove(e){
     case 'trim': snapAt = dragTrim(d); break;
     case 'roll': snapAt = dragRoll(d); break;
     case 'slip': dragSlip(d); break;
-    case 'vol': { const h = TH - 18; drag.c.props.volume = clamp(Math.round(drag.v0 - (e.clientY - drag.y0) / h * 200), 0, 400); status('Nivel de volumen: ' + dbStr(drag.c.props.volume / 100)); break; }
+    case 'vol': { const h = Math.max(10, rowH(rowOf(drag.c.track)) - 18); drag.c.props.volume = clamp(Math.round(drag.v0 - (e.clientY - drag.y0) / h * 200), 0, 400); status('Nivel de volumen: ' + dbStr(drag.c.props.volume / 100)); break; }
     case 'transDur': { if (S.tracks[drag.c.track].lock) break; const c = drag.c, tr = drag.side === 'in' ? c.tIn : c.tOut; if (tr){ tr.dur = q(clamp(drag.d0 + (drag.side === 'in' ? d : -d), 1 / FPS, c.dur)); status('Duración de la transición: ' + tc(tr.dur)); } break; }
   }
   const sl = $('#snapLine');
@@ -286,7 +302,7 @@ function dragMove(e, d){
   if (!a) return null;
   const r = snapTime(a.start + d, ids, [0, clip(a.id).dur]); d = r.t - a.start;
   const minS = Math.min(...drag.orig.map(o => o.start)); if (minS + d < 0) d = -minS;
-  let dRow = Math.round((e.clientY - drag.y0) / TH);
+  const ir = inner.getBoundingClientRect(); let dRow = rowAt(e.clientY - ir.top) - rowAt(drag.y0 - ir.top);
   const aType = isV(a.track);
   for (const o of drag.orig){ if (isV(o.track) !== aType) continue; const rows = aType ? VROWS : AROWS, r0 = rowOf(o.track); dRow = clamp(dRow, rows[0] - r0, rows[rows.length - 1] - r0); }
   for (const o of drag.orig){
@@ -396,7 +412,7 @@ function onDragOver(e){
   const {row, t} = posFrom(e), m = media(DRAGMEDIA), gh = $('#ghost');
   const st = snapTime(Math.max(0, t), new Set()).t;
   const dur = DRAGRANGE ? DRAGRANGE.out - DRAGRANGE.in : m ? srcDurOf(m) : 5;
-  gh.style.display = 'block'; gh.style.left = st * S.zoom + 'px'; gh.style.width = dur * S.zoom + 'px'; gh.style.top = clamp(row, 0, 5) * TH + 1 + 'px';
+  gh.style.display = 'block'; gh.style.left = st * S.zoom + 'px'; gh.style.width = dur * S.zoom + 'px'; const gr = clamp(row, 0, TRACKS.length - 1); gh.style.top = rowTop(gr) + 1 + 'px'; gh.style.height = (rowH(gr) - 2) + 'px';
 }
 async function onDrop(e){
   e.preventDefault(); $('#ghost').style.display = 'none';

@@ -242,7 +242,7 @@ select.mini{height:22px;padding:0 4px;font-size:11px;background:#1b1b1b;color:#b
 #ruler{display:block;cursor:pointer}
 .tlmid{display:grid;grid-template-columns:170px 1fr;min-height:0}
 #heads{overflow:hidden;background:var(--panel);border-right:1px solid #111}
-.head{height:46px;display:flex;align-items:center;gap:3px;padding:0 6px;border-bottom:1px solid #1a1a1a}
+.head{height:46px;position:relative;display:flex;align-items:center;gap:3px;padding:0 6px;border-bottom:1px solid #1a1a1a}
 .head.sepa{border-bottom:2px solid #3d3d3d}
 .head .tn{width:30px;height:22px;border-radius:3px;background:#2e5f9e;color:#fff;display:grid;place-items:center;font-weight:600;font-size:11px;flex:none}
 .head .nm{color:#8a8a8a;font-size:11px;margin-left:3px;white-space:nowrap;overflow:hidden}
@@ -377,3 +377,7 @@ body.t-trackfwd #tracks,body.t-trackfwd #tracks .clip,body.t-trackfwd #tracks .c
 #movl i.br{background:#f0c64a;border-color:#6b5310}
 .fxitem .ic.g{background:#b0457e}
 .mkinv{display:flex!important;align-items:center;gap:4px;flex:none!important;margin-left:8px}
+
+/* altura de pista */
+.head .rsz{position:absolute;left:0;right:0;bottom:-3px;height:6px;cursor:row-resize;z-index:2}
+.head .rsz:hover{background:rgba(45,140,235,.5)}
