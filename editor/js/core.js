@@ -237,7 +237,15 @@ function modal(title, bodyHTML, buttons){
   const f = m.querySelector('input:not([type=checkbox]),select,textarea'); if (f) setTimeout(() => f.focus(), 0);
   return m;
 }
+// Guardado de archivos: en el visor de páginas publicadas se usa su diálogo de descarga; en local, un enlace normal
+let DLCAP = null;
+try { if (window.claude && window.claude.use) window.claude.use('downloads').then(d => { DLCAP = d; }).catch(() => {}); } catch(e){}
 function download(blob, name){
+  if (DLCAP){
+    let n = name; if (!/\.(gif|png|jpe?g|webp|mp4|webm|txt|json|md|csv|html|svg|pdf|zip)$/i.test(n)) n += '.json';
+    DLCAP.save({filename:n, data:blob}).then(() => toast('Archivo guardado: ' + n)).catch(e => { if (!e || e.code !== 'declined') toast('No se pudo guardar el archivo' + (e && e.message ? ': ' + e.message : '')); });
+    return;
+  }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
   a.download = name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w .()-]/g, '_');
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 60000);
