@@ -85,11 +85,11 @@ function renderProject(){
     el.appendChild(d);
   }
 }
-function removeMedia(id){
+function removeMedia(id, ok){
   const m = media(id); if (!m) return;
   storeSeq();
   const used = S.seqs.some(sq => sq.clips.some(c => c.mediaId === id));
-  if (used && !confirm(`"${m.name}" se usa en la secuencia. ¿Borrarlo y quitar sus clips?`)) return;
+  if (used && !ok) return askConfirm(`"${m.name}" se usa en la secuencia. ¿Borrarlo y quitar sus clips?`, () => removeMedia(id, true), 'Borrar');
   if (used){
     TRASH.set(m.id, m);
     S.seqs.forEach(sq => { if (sq.id !== S.curSeq) sq.clips = sq.clips.filter(c => c.mediaId !== id); });
@@ -255,9 +255,9 @@ function kfDiamond(c, key, k){
   };
   return d;
 }
-function toggleAnim(c, key){
+function toggleAnim(c, key, ok){
   if (hasKf(c, key)){
-    if (!confirm('Esta acción eliminará los fotogramas clave existentes. ¿Desea continuar?')) return;
+    if (!ok) return askConfirm('Esta acción eliminará los fotogramas clave existentes. ¿Desea continuar?', () => toggleAnim(c, key, true));
     const v = val(c, key, S.t); edit(() => { delete c.kf[key]; setBase(c, key, v); }, 'Desactivar animación');
   } else {
     const l = clamp(q(S.t - c.start), 0, c.dur); edit(() => { c.kf[key] = [{t:l, v:baseVal(c, key)}]; }, 'Activar animación');

@@ -470,11 +470,11 @@ function renumberTracks(p, keep){
   S.clips.forEach(c => { if (map[c.track]) c.track = map[c.track]; });
   layoutTracks();
 }
-function deleteTrack(id){
+function deleteTrack(id, ok){
   const p = id[0], nums = (p === 'V' ? VROWS : AROWS).map(i => +TRACKS[i].id.slice(1)).sort((a, b) => a - b);
   if (nums.length <= 1) return toast('Debe quedar al menos una pista de ' + (p === 'V' ? 'vídeo' : 'audio'));
   const used = S.clips.filter(c => c.track === id).length;
-  if (used && !confirm(`La pista ${id} tiene ${used} clip(s). ¿Eliminarla junto con sus clips?`)) return;
+  if (used && !ok) return askConfirm(`La pista ${id} tiene ${used} clip(s). ¿Eliminarla junto con sus clips?`, () => deleteTrack(id, true), 'Eliminar pista');
   edit(() => {
     S.clips = S.clips.filter(c => c.track !== id);
     renumberTracks(p, nums.filter(n => n !== +id.slice(1)));
@@ -586,12 +586,12 @@ function duplicateSeq(id){
   d.clips.forEach(c => c.id = nid());
   S.seqs.push(d); renderProject(); scheduleSave(); toast('Secuencia duplicada: ' + d.name);
 }
-function deleteSeq(id){
+function deleteSeq(id, ok){
   if (S.seqs.length <= 1) return toast('El proyecto debe tener al menos una secuencia');
   const users = S.seqs.filter(s => s.id !== id && seqById(s.id).clips.some(c => isNest(c) && c.nestId === id));
   if (users.length) return toast('No se puede borrar: se usa anidada en ' + users.map(s => s.name).join(', '));
   const o = S.seqs.find(s => s.id === id);
-  if (!confirm(`¿Borrar la secuencia "${o.name}"? Esta acción no se puede deshacer.`)) return;
+  if (!ok) return askConfirm(`¿Borrar la secuencia "${o.name}"? Esta acción no se puede deshacer.`, () => deleteSeq(id, true), 'Borrar secuencia');
   if (id === S.curSeq) switchSeq(S.seqs.find(s => s.id !== id).id);
   S.seqs = S.seqs.filter(s => s.id !== id); S.openSeqs = S.openSeqs.filter(x => x !== id);
   UNDO.splice(0, UNDO.length, ...UNDO.filter(u => JSON.parse(u.s).s !== id)); REDO.length = 0;

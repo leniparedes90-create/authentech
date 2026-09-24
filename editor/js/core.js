@@ -265,6 +265,8 @@ function ctxMenu(x, y, items){
   m.style.left = Math.max(2, Math.min(x, innerWidth - r.width - 4)) + 'px';
   m.style.top = Math.max(2, Math.min(y, innerHeight - r.height - 4)) + 'px';
 }
+// Confirmación dentro de la página (confirm() del navegador no funciona en todos los entornos)
+function askConfirm(msg, onYes, okLabel = 'Aceptar'){ modal('Confirmar', `<div style="max-width:420px;line-height:1.6">${esc(msg)}</div>`, [['Cancelar'], [okLabel, () => { onYes(); }, true]]); }
 function closeCtx(){ const m = $('#ctx'); if (m) m.remove(); }
 
 /* ================================== historial ================================== */
@@ -422,8 +424,8 @@ let saveT;
 function scheduleSave(){ clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem('authencut.project', JSON.stringify(serialize())); } catch(e){} }, 700); }
 function saveProjectFile(){ download(new Blob([JSON.stringify(serialize())], {type:'application/json'}), projName() + '.acproj'); toast('Proyecto guardado'); }
 function openProjectFile(){ $('#projIn').click(); }
-function newProject(){
-  if ((S.clips.length || S.media.length) && !confirm('¿Crear un proyecto nuevo? Se perderán los cambios que no hayas guardado.')) return;
+function newProject(ok){
+  if ((S.clips.length || S.media.length) && !ok) return askConfirm('¿Crear un proyecto nuevo? Se perderán los cambios que no hayas guardado.', () => newProject(true), 'Crear proyecto');
   load({clips:[], media:[], name:'Proyecto sin título', seq:{w:1920, h:1080}, zoom:40});
   toast('Proyecto nuevo');
 }
