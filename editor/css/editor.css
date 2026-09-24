@@ -381,3 +381,9 @@ body.t-trackfwd #tracks,body.t-trackfwd #tracks .clip,body.t-trackfwd #tracks .c
 /* altura de pista */
 .head .rsz{position:absolute;left:0;right:0;bottom:-3px;height:6px;cursor:row-resize;z-index:2}
 .head .rsz:hover{background:rgba(45,140,235,.5)}
+
+/* interpolación de fotogramas clave */
+.kd.ease{border-radius:50%}
+.kd.in{border-radius:0 50% 50% 50%}
+.kd.out{border-radius:50% 50% 0 50%}
+.kd.hold{background:#d9a441;border-radius:0}

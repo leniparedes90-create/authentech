@@ -498,3 +498,59 @@ function renameTrack(id){
     [['Cancelar'], ['Aceptar', m => { st.name = m.querySelector('#rtN').value.trim(); buildTracks(); scheduleSave(); }, true]]);
 }
 function setTrackHeight(id, h){ const st = S.tracks[id]; if (!st) return; st.h = clamp(Math.round(h), 30, 220); buildTracks(); renderTimeline(); scheduleSave(); }
+
+/* ============================ pegar / eliminar atributos ============================ */
+const ATTR_GROUPS = [
+  ['motion', 'Movimiento', ['x','y','scale','rotation'], true],
+  ['opacity', 'Opacidad', ['opacity'], true],
+  ['volume', 'Volumen y panoramizador', ['volume','pan'], false],
+  ['fx', 'Efectos', null, null],
+  ['speed', 'Velocidad (reasignación de tiempo)', null, null],
+  ['text', 'Estilo de texto', null, true]
+];
+function attrDialog(title, src, onOk){
+  const vis = src ? visual(src) : [...S.sel].map(clip).some(c => c && visual(c));
+  const groups = ATTR_GROUPS.filter(([id, , , v]) => v === null || v === vis || (id === 'text' && (!src || src.kind === 'text')));
+  modal(title, groups.map(([id, n]) => `<label class="ck"><input type="checkbox" data-g="${id}" checked> ${n}</label>`).join(''),
+    [['Cancelar'], ['Aceptar', m => onOk(new Set([...m.querySelectorAll('[data-g]:checked')].map(i => i.dataset.g))), true]]);
+}
+function pasteAttributes(){
+  const src = S.clipboard && S.clipboard[0];
+  if (!src) return toast('Copia primero un clip (Ctrl+C)');
+  const cs = [...S.sel].map(clip).filter(c => c && !S.tracks[c.track].lock && visual(c) === visual(src));
+  if (!cs.length) return toast('Selecciona los clips de destino en la línea de tiempo');
+  attrDialog('Pegar atributos', src, g => edit(() => {
+    for (const c of cs){
+      for (const [id, , keys] of ATTR_GROUPS) if (keys && g.has(id)) for (const k of keys){
+        c.props[k] = src.props[k];
+        if (src.kf[k]) c.kf[k] = src.kf[k].map(x => ({...x, t: x.t * (c.dur / src.dur)})); else delete c.kf[k];
+      }
+      if (g.has('fx')){
+        for (const f of src.fx){
+          const nf = JSON.parse(JSON.stringify(f)); nf.id = nid('f'); c.fx.push(nf);
+          for (const k in src.kf) if (k.startsWith('fx.' + f.id + '.')) c.kf['fx.' + nf.id + k.slice(3 + f.id.length)] = src.kf[k].map(x => ({...x, t: x.t * (c.dur / src.dur)}));
+        }
+      }
+      if (g.has('speed') && mediaBased(c) === mediaBased(src)){
+        const nd = Math.max(1 / FPS, q(c.dur * spd(c) / spd(src)));
+        scaleKf(c, nd / c.dur); c.speed = spd(src); c.dur = nd; clampTrans(c);
+      }
+      if (g.has('text') && c.kind === 'text' && src.kind === 'text') for (const k in TEXT_DEFAULTS) if (k !== 'text') c.props[k] = src.props[k];
+    }
+    overwrite(cs.map(c => c.id));
+  }, 'Pegar atributos'));
+}
+function removeAttributes(){
+  const cs = [...S.sel].map(clip).filter(c => c && !S.tracks[c.track].lock);
+  if (!cs.length) return toast('Selecciona uno o más clips');
+  attrDialog('Eliminar atributos', null, g => edit(() => {
+    for (const c of cs){
+      const def = defaultProps(c.kind);
+      for (const [id, , keys] of ATTR_GROUPS) if (keys && g.has(id)) for (const k of keys){ c.props[k] = def[k]; delete c.kf[k]; }
+      if (g.has('fx')){ for (const k in c.kf) if (k.startsWith('fx.')) delete c.kf[k]; c.fx = []; }
+      if (g.has('speed') && spd(c) !== 1){ const nd = Math.max(1 / FPS, q(c.dur * spd(c))); scaleKf(c, nd / c.dur); c.speed = 1; c.dur = nd; clampTrans(c); }
+      if (g.has('text') && c.kind === 'text') for (const k in TEXT_DEFAULTS) if (k !== 'text') c.props[k] = TEXT_DEFAULTS[k];
+    }
+    overwrite(cs.map(c => c.id));
+  }, 'Eliminar atributos'));
+}

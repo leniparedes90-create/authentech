@@ -45,7 +45,7 @@ const MENUS = {
     ['Exportar medios…', 'Ctrl+M', () => setMode('export')], ['Exportación rápida', '', quickExport], ['Exportar fotograma', 'Ctrl+Mayús+E', exportFrame]],
   'Edición': [
     ['Deshacer', 'Ctrl+Z', undo], ['Rehacer', 'Ctrl+Mayús+Z', redo], '-',
-    ['Cortar', 'Ctrl+X', cut], ['Copiar', 'Ctrl+C', copy], ['Pegar', 'Ctrl+V', () => paste(false)], ['Pegar inserción', 'Ctrl+Mayús+V', () => paste(true)],
+    ['Cortar', 'Ctrl+X', cut], ['Copiar', 'Ctrl+C', copy], ['Pegar', 'Ctrl+V', () => paste(false)], ['Pegar inserción', 'Ctrl+Mayús+V', () => paste(true)], ['Pegar atributos…', 'Ctrl+Alt+V', pasteAttributes], ['Eliminar atributos…', '', removeAttributes],
     ['Borrar', 'Supr', del], ['Eliminar con ondulación', 'Mayús+Supr', rippleDel], '-',
     ['Seleccionar todo', 'Ctrl+A', selectAll], ['Anular la selección de todo', 'Ctrl+Mayús+A', deselectAll], '-',
     ['Métodos abreviados de teclado', 'Ctrl+Alt+K', showShortcuts]],
@@ -259,7 +259,7 @@ function showShortcuts(){
   const G = [
     ['Reproducción', [['Espacio','Reproducir / Detener'],['J / K / L','Retroceder / Detener / Avanzar (pulsa varias veces para más velocidad)'],['← / →','Fotograma anterior / siguiente (Mayús: 5 fotogramas)'],['↑ / ↓','Punto de edición anterior / siguiente'],['Inicio / Fin','Ir al inicio / al final']]],
     ['Herramientas', [['V','Selección'],['A','Seleccionar pista hacia delante'],['B','Edición de ondulación'],['N','Edición de rodillo'],['R','Ajuste de velocidad'],['C','Cuchilla (Mayús+clic: todas las pistas)'],['Y','Desplazar'],['H','Mano'],['Z','Zoom (Alt+clic: alejar)'],['T','Texto']]],
-    ['Edición', [['Ctrl+K','Añadir edición (Ctrl+Mayús+K: todas las pistas)'],['Q / W','Recortar con ondulación la edición anterior / siguiente'],['Supr','Borrar'],['Mayús+Supr','Eliminar con ondulación'],['Alt+arrastrar','Mover o recortar sin el clip vinculado'],['Alt+← / →','Desplazar los clips seleccionados un fotograma (Mayús: 5)'],['Ctrl+arrastrar','Insertar al soltar un medio'],['Ctrl+C / X / V','Copiar / Cortar / Pegar (Ctrl+Mayús+V: pegar inserción)'],['Ctrl+Z / Ctrl+Mayús+Z','Deshacer / Rehacer'],['Ctrl+L','Vincular / Desvincular'],['Mayús+E','Habilitar / Deshabilitar clip'],['Ctrl+R','Velocidad/duración'],['Ctrl+D','Transición de vídeo (Ctrl+Mayús+D: audio; Mayús+D: ambas)']]],
+    ['Edición', [['Ctrl+K','Añadir edición (Ctrl+Mayús+K: todas las pistas)'],['Q / W','Recortar con ondulación la edición anterior / siguiente'],['Supr','Borrar'],['Mayús+Supr','Eliminar con ondulación'],['Alt+arrastrar','Mover o recortar sin el clip vinculado'],['Alt+← / →','Desplazar los clips seleccionados un fotograma (Mayús: 5)'],['Ctrl+arrastrar','Insertar al soltar un medio'],['Ctrl+C / X / V','Copiar / Cortar / Pegar (Ctrl+Mayús+V: pegar inserción; Ctrl+Alt+V: pegar atributos)'],['Ctrl+Z / Ctrl+Mayús+Z','Deshacer / Rehacer'],['Ctrl+L','Vincular / Desvincular'],['Mayús+E','Habilitar / Deshabilitar clip'],['Ctrl+R','Velocidad/duración'],['Ctrl+D','Transición de vídeo (Ctrl+Mayús+D: audio; Mayús+D: ambas)']]],
     ['Marcas', [['I / O','Marcar entrada / salida'],['Mayús+I / Mayús+O','Ir a entrada / salida'],['Ctrl+Mayús+X','Borrar entrada y salida'],['; / \'','Levantar / Extraer'],[', / .','Insertar / Sobrescribir desde el origen'],['M','Añadir marcador (Mayús+M: siguiente)']]],
     ['Vista y archivo', [['= / - / \\','Acercar / Alejar / Ajustar la secuencia'],['Alt+rueda','Zoom en la línea de tiempo'],['S','Ajustar en la línea de tiempo'],['º (`)','Maximizar el panel activo'],['Mayús+1…7','Proyecto, Origen, Línea de tiempo, Programa, Controles de efectos, Mezclador, Efectos'],['Ctrl+I','Importar'],['Ctrl+T','Nuevo título'],['Ctrl+M','Exportar medios'],['Ctrl+Mayús+E','Exportar fotograma'],['Ctrl+S','Guardar proyecto']]]
   ];
@@ -289,7 +289,7 @@ function onKey(e){
   if ($('#ctx') && e.key === 'Escape'){ closeCtx(); return; }
   const k = e.key, K = k.length === 1 ? k.toLowerCase() : k, ctrl = e.ctrlKey || e.metaKey, sh = e.shiftKey, alt = e.altKey;
   if (ctrl){
-    if (alt){ if (K === 'n') newProject(); else if (K === 'k') showShortcuts(); else return; e.preventDefault(); return; }
+    if (alt){ if (K === 'n') newProject(); else if (K === 'k') showShortcuts(); else if (K === 'v') pasteAttributes(); else return; e.preventDefault(); return; }
     switch (K){
       case 'z': sh ? redo() : undo(); break;
       case 'y': redo(); break;

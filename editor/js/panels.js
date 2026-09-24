@@ -208,8 +208,17 @@ function propRow(c, label, key, min, max, step, unit, fmt){
   if (hasKf(c, key)) for (const k of c.kf[key]) lane.appendChild(kfDiamond(c, key, k));
   row.append(L, lane); return row;
 }
+const KF_EASE = {linear:'Lineal', ease:'Bézier (suave)', in:'Suavizar entrada', out:'Suavizar salida', hold:'Mantener'};
 function kfDiamond(c, key, k){
-  const d = document.createElement('i'); d.className = 'kd'; d.style.left = (k.t / c.dur * 100) + '%'; d.title = tc(c.start + k.t);
+  const d = document.createElement('i'); d.className = 'kd' + (k.e ? ' ' + k.e : ''); d.style.left = (k.t / c.dur * 100) + '%';
+  d.title = tc(c.start + k.t) + ' · ' + (KF_EASE[k.e || 'linear']) + ' (clic derecho para cambiar)';
+  d.oncontextmenu = e => {
+    e.preventDefault(); e.stopPropagation();
+    const setE = v => edit(() => { if (v === 'linear') delete k.e; else k.e = v; }, 'Interpolación: ' + KF_EASE[v]);
+    ctxMenu(e.clientX, e.clientY, [
+      ...Object.entries(KF_EASE).map(([v, n]) => [n, '', () => setE(v), false, (k.e || 'linear') === v]), '-',
+      ['Borrar', '', () => edit(() => { c.kf[key] = c.kf[key].filter(x => x !== k); if (!c.kf[key].length){ delete c.kf[key]; setBase(c, key, k.v); } }, 'Borrar fotograma clave')]]);
+  };
   d.onmousedown = e => {
     e.preventDefault(); e.stopPropagation();
     const r = d.parentElement.getBoundingClientRect(), before = snap(), t0 = k.t, x0 = e.clientX; let moved = false;

@@ -450,6 +450,7 @@ function onTracksCtx(e){
   const linked = [...S.sel].some(id => { const k = clip(id); return k && k.link; });
   ctxMenu(e.clientX, e.clientY, [
     ['Cortar', 'Ctrl+X', cut], ['Copiar', 'Ctrl+C', copy], ['Pegar', 'Ctrl+V', () => paste(false), !S.clipboard],
+    ['Pegar atributos…', 'Ctrl+Alt+V', pasteAttributes, !S.clipboard], ['Eliminar atributos…', '', removeAttributes],
     ['Borrar', 'Supr', del], ['Eliminar con ondulación', 'Mayús+Supr', rippleDel], '-',
     ['Habilitar', 'Mayús+E', toggleEnable, false, !c.disabled],
     [linked ? 'Desvincular' : 'Vincular', 'Ctrl+L', toggleLink, !linked && S.sel.size < 2], '-',

@@ -109,7 +109,14 @@ function val(c, key, t){
   const a = c.kf[key]; if (!a || !a.length) return baseVal(c, key);
   const l = t - c.start;
   if (l <= a[0].t) return a[0].v;
-  for (let i = 1; i < a.length; i++) if (l <= a[i].t){ const p = a[i-1], n = a[i]; return p.v + (n.v - p.v) * ((l - p.t) / ((n.t - p.t) || 1)); }
+  for (let i = 1; i < a.length; i++) if (l <= a[i].t){
+    const p = a[i-1], n = a[i];
+    if (p.e === 'hold') return p.v;
+    let f = (l - p.t) / ((n.t - p.t) || 1);
+    const eo = p.e === 'ease' || p.e === 'out', ei = n.e === 'ease' || n.e === 'in';
+    f = eo && ei ? f * f * (3 - 2 * f) : eo ? f * f : ei ? 1 - (1 - f) * (1 - f) : f;
+    return p.v + (n.v - p.v) * f;
+  }
   return a[a.length - 1].v;
 }
 function putKf(c, key, l, v){
