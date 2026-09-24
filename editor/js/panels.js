@@ -38,11 +38,29 @@ function tcEditable(el, get, set){
 const TYPE_NAMES = {video:'Vídeo', audio:'Audio', image:'Imagen fija'};
 function renderProject(){
   const el = $('#projList'), qy = $('#projSearch').value.trim().toLowerCase();
-  $('#projCount').textContent = S.media.length + (S.media.length === 1 ? ' elemento' : ' elementos');
+  const nItems = S.media.length + S.seqs.length;
+  $('#projCount').textContent = nItems + (nItems === 1 ? ' elemento' : ' elementos');
   el.innerHTML = '';
+  for (const sq of S.seqs){
+    if (qy && !sq.name.toLowerCase().includes(qy)) continue;
+    const dur = seqEndOf(seqById(sq.id)), d = document.createElement('div');
+    d.className = 'pitem seqi' + (sq.id === S.curSeq ? ' cur' : '');
+    d.draggable = true; d.title = `${sq.name}\nSecuencia · ${sq.w}×${sq.h} · ${tc(dur)}\nDoble clic para abrirla; arrástrala a otra secuencia para anidarla`;
+    d.innerHTML = `<div class="pthumb seqthumb">${ICON.seq}<span class="pdur">${tc(dur)}</span></div><div class="pname"><span class="pbadge seq"></span>${esc(sq.name)}</div>`;
+    d.ondblclick = () => switchSeq(sq.id);
+    d.ondragstart = e => { DRAGMEDIA = 'seq:' + sq.id; DRAGRANGE = null; e.dataTransfer.setData('text/plain', sq.name); e.dataTransfer.effectAllowed = 'copy'; };
+    d.ondragend = () => { DRAGMEDIA = null; $('#ghost').style.display = 'none'; };
+    d.oncontextmenu = e => {
+      e.preventDefault();
+      ctxMenu(e.clientX, e.clientY, [['Abrir en la línea de tiempo', '', () => switchSeq(sq.id), sq.id === S.curSeq], ['Cambiar nombre…', '', () => renameSeq(sq.id)], ['Duplicar', '', () => duplicateSeq(sq.id)], '-',
+        ['Nueva secuencia…', 'Ctrl+N', newSequenceDialog], ['Borrar', '', () => deleteSeq(sq.id), S.seqs.length <= 1]]);
+    };
+    el.appendChild(d);
+  }
   if (!S.media.length){
-    el.innerHTML = '<div class="empty" id="emptyImp"><b>Importa medios para comenzar</b><br>Haz clic aquí o arrastra archivos de vídeo,<br>audio o imagen a este panel</div>';
-    $('#emptyImp').onclick = () => $('#fileIn').click(); return;
+    const e0 = document.createElement('div'); e0.className = 'empty'; e0.id = 'emptyImp';
+    e0.innerHTML = '<b>Importa medios para comenzar</b><br>Haz clic aquí o arrastra archivos de vídeo,<br>audio o imagen a este panel';
+    e0.onclick = () => $('#fileIn').click(); el.appendChild(e0); return;
   }
   for (const m of S.media){
     if (qy && !m.name.toLowerCase().includes(qy)) continue;
@@ -69,9 +87,14 @@ function renderProject(){
 }
 function removeMedia(id){
   const m = media(id); if (!m) return;
-  const used = S.clips.some(c => c.mediaId === id);
+  storeSeq();
+  const used = S.seqs.some(sq => sq.clips.some(c => c.mediaId === id));
   if (used && !confirm(`"${m.name}" se usa en la secuencia. ¿Borrarlo y quitar sus clips?`)) return;
-  if (used){ TRASH.set(m.id, m); edit(() => { S.clips = S.clips.filter(c => c.mediaId !== id); }, 'Borrar medio'); }
+  if (used){
+    TRASH.set(m.id, m);
+    S.seqs.forEach(sq => { if (sq.id !== S.curSeq) sq.clips = sq.clips.filter(c => c.mediaId !== id); });
+    edit(() => { S.clips = S.clips.filter(c => c.mediaId !== id); }, 'Borrar medio');
+  }
   S.media = S.media.filter(x => x !== m);
   if (S.src.id === id) closeSource();
   S.projSel = null; renderProject(); scheduleSave();
@@ -145,8 +168,8 @@ function renderEffects(force){
   const box = $('#fxBody'); box.innerHTML = '';
   if (!c){ box.innerHTML = '<div class="fxempty">(No hay clips seleccionados)<br><span class="dim">Selecciona un clip en la línea de tiempo para ver sus efectos</span></div>'; return; }
   if (S.selTrans) return renderTransControls(box, c, S.selTrans.side);
-  const m = media(c.mediaId), name = c.kind === 'text' ? (c.props.text || 'Título').split('\n')[0] : (m ? m.name : 'Clip');
-  const top = fxRow(`<span>Principal * <b>${esc(name)}</b></span><span class="dim">›</span><span>Secuencia 01 * <b>${esc(name)}</b></span>`, `<div class="lanebar">${esc(name)}</div>`);
+  const m = media(c.mediaId), name = c.kind === 'text' ? (c.props.text || 'Título').split('\n')[0] : isNest(c) ? ((S.seqs.find(s => s.id === c.nestId) || {}).name || 'Secuencia') : (m ? m.name : 'Clip');
+  const top = fxRow(`<span>Principal * <b>${esc(name)}</b></span><span class="dim">›</span><span>${esc(seqName())} * <b>${esc(name)}</b></span>`, `<div class="lanebar">${esc(name)}</div>`);
   top.classList.add('fxtop');
   top.querySelector('.lane').addEventListener('mousedown', e => {
     const r = e.currentTarget.getBoundingClientRect(); pause();
@@ -155,8 +178,8 @@ function renderEffects(force){
     window.addEventListener('mousemove', f); window.addEventListener('mouseup', up);
   });
   box.appendChild(top);
-  const grp = fxRow(c.kind === 'audio' ? 'Efectos de audio' : 'Efectos de vídeo', ''); grp.classList.add('fxgrp'); box.appendChild(grp);
-  if (c.kind === 'audio'){
+  const grp = fxRow(isAud(c) ? 'Efectos de audio' : 'Efectos de vídeo', ''); grp.classList.add('fxgrp'); box.appendChild(grp);
+  if (isAud(c)){
     section(box, c, 'Volumen', [['Nivel', 'volume', 0, 400, 1, '', VOLFMT]]);
     section(box, c, 'Panoramizador', [['Balance', 'pan', -100, 100, 1, '']]);
   } else {
@@ -463,7 +486,7 @@ function applyFromLibrary(key){
   const id = key.slice(2);
   if (key.startsWith('t:')){
     const isA = id in ATRANS, p = primaryClip();
-    const c = p && (p.kind === 'audio') === isA ? p : cs.find(k => (k.kind === 'audio') === isA);
+    const c = p && isAud(p) === isA ? p : cs.find(k => isAud(k) === isA);
     if (!c) return toast(isA ? 'Selecciona un clip de audio' : 'Selecciona un clip de vídeo');
     applyTransition(c, 'in', id);
   } else {
@@ -498,17 +521,17 @@ function renderInfo(){
   if (c){
     const m = media(c.mediaId);
     h += `<h6>${esc(c.kind === 'text' ? 'Gráfico: ' + (c.props.text || '').split('\n')[0] : m ? m.name : 'Clip')}</h6>`;
-    h += row('Tipo', {video:'Vídeo', audio:'Audio', image:'Imagen fija', text:'Gráfico'}[c.kind]);
+    h += row('Tipo', {video:'Vídeo', audio:'Audio', image:'Imagen fija', text:'Gráfico', nest:'Secuencia anidada (vídeo)', nesta:'Secuencia anidada (audio)'}[c.kind]);
     if (m && m.w) h += row('Vídeo', `${m.w} × ${m.h}`);
     h += row('Pista', c.track) + row('Inicio', tc(c.start)) + row('Fin', tc(cend(c))) + row('Duración', tc(c.dur));
-    if (mediaBased(c)) h += row('Entrada', tc(c.in)) + row('Salida', tc(c.in + c.dur * spd(c)));
+    if (hasSrc(c)) h += row('Entrada', tc(c.in)) + row('Salida', tc(c.in + c.dur * spd(c)));
     if (spd(c) !== 1) h += row('Velocidad', num(spd(c) * 100) + ' %');
   } else if (S.projSel && media(S.projSel)){
     const m = media(S.projSel);
     h += `<h6>${esc(m.name)}</h6>` + row('Tipo', TYPE_NAMES[m.type]) + (m.w ? row('Vídeo', `${m.w} × ${m.h}`) : '') + row('Duración', tc(srcDurOf(m)));
     if (m.size) h += row('Tamaño', (m.size / 1048576).toFixed(1).replace('.', ',') + ' MB');
   }
-  h += '<h6>Secuencia 01</h6>' + row('Cabezal', tc(S.t)) + row('Duración', tc(seqEnd())) + row('Formato', `${S.seq.w} × ${S.seq.h} · ${FPS} fps`);
+  h += `<h6>${esc(seqName())}</h6>` + row('Cabezal', tc(S.t)) + row('Duración', tc(seqEnd())) + row('Formato', `${S.seq.w} × ${S.seq.h} · ${FPS} fps`);
   if (S.seqIn != null || S.seqOut != null){ const {a, b} = seqRange(); h += row('Entrada', tc(a)) + row('Salida', tc(b)) + row('Duración E/S', tc(b - a)); }
   el.innerHTML = h;
 }
@@ -727,4 +750,19 @@ function initPanels(){
   });
   $('#monZoom').onchange = e => setMonZoom(e.target.value);
   $('#monRes').onchange = e => { S.res = +e.target.value; };
+}
+
+/* ============================ pestañas de secuencias ============================ */
+function renderSeqTabs(){
+  const host = $('#seqTabs'); if (!host) return;
+  host.innerHTML = '';
+  for (const id of S.openSeqs){
+    const sq = S.seqs.find(s => s.id === id); if (!sq) continue;
+    const t = document.createElement('div'); t.className = 'tab' + (id === S.curSeq ? ' on' : '');
+    t.innerHTML = `${S.openSeqs.length > 1 ? '<button class="tx" title="Cerrar secuencia">×</button>' : '<span class="tx0">×</span>'}<span>${esc(sq.name)}</span>`;
+    t.onclick = e => { if (e.target.closest('.tx')) return closeSeqTab(id); switchSeq(id); };
+    t.ondblclick = e => { if (!e.target.closest('.tx')) renameSeq(id); };
+    host.appendChild(t);
+  }
+  $('#seqLabel').textContent = seqName();
 }

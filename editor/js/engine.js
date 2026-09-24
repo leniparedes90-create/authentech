@@ -28,19 +28,19 @@ function trkNode(id){
 
 /* ============================ elementos multimedia ============================ */
 const ELS = new Map();
-function elFor(c){
+function elFor(c, key = c.id){
   const m = media(c.mediaId); if (!m || m.offline || !m.url) return null;
-  let r = ELS.get(c.id);
-  if (r && r.url === m.url) return r;
-  if (r) dropEl(c.id);
-  if (c.kind === 'image'){ r = {url:m.url, el:m.img}; ELS.set(c.id, r); return r; }
+  let r = ELS.get(key);
+  if (r && r.url === m.url && (c.kind !== 'image' || r.el === m.img)) return r;
+  if (r) dropEl(key);
+  if (c.kind === 'image'){ if (!m.img) return null; r = {url:m.url, el:m.img}; ELS.set(key, r); return r; }
   const el = document.createElement(c.kind === 'video' ? 'video' : 'audio');
   el.preload = 'auto'; el.playsInline = true; el.src = m.url; if (c.kind === 'video') el.muted = true;
   $('#mediaHold').appendChild(el); r = {url:m.url, el};
   if (c.kind === 'audio' && ensureAudio()){
     try { r.node = AC.createMediaElementSource(el); r.gain = AC.createGain(); r.pan = AC.createStereoPanner(); r.node.connect(r.gain); r.gain.connect(r.pan); } catch(e){}
   }
-  ELS.set(c.id, r); return r;
+  ELS.set(key, r); return r;
 }
 function routeTrack(r, tid){
   if (!r.pan || r.route === tid) return;
@@ -59,18 +59,19 @@ function dropEl(id){
 
 /* =========================== transiciones de audio =========================== */
 function curve(type, x){ x = clamp(x, 0, 1); if (type === 'gain') return x; if (type === 'expo') return x * x; return Math.sin(x * Math.PI / 2); }
-function transK(c, t){
+function transK(c, t, list = S.clips){
   const l = t - c.start, e = cend(c); let k = 1;
   if (c.tIn && l < c.tIn.dur) k *= curve(c.tIn.type, l / c.tIn.dur);
-  if (t >= e){ const n = nextOf(c); k *= (n && n.tIn) ? curve(n.tIn.type, 1 - (t - e) / n.tIn.dur) : 0; }
-  else if (c.tOut && !nextOf(c) && e - t < c.tOut.dur) k *= curve(c.tOut.type, (e - t) / c.tOut.dur);
+  if (t >= e){ const n = nextIn(list, c); k *= (n && n.tIn) ? curve(n.tIn.type, 1 - (t - e) / n.tIn.dur) : 0; }
+  else if (c.tOut && !nextIn(list, c) && e - t < c.tOut.dur) k *= curve(c.tOut.type, (e - t) / c.tOut.dur);
   return k;
 }
+const ampK = (c, t) => c.fx.reduce((g, f) => f.on && f.type === 'amp' ? g * Math.pow(10, val(c, 'fx.' + f.id + '.db', t) / 20) : g, 1);
 
 /* ================================ sincronización ================================ */
+let FRAME = 0;
 function sync(){
-  const t = S.t, live = new Set(S.clips.map(c => c.id));
-  for (const id of [...ELS.keys()]) if (!live.has(id)) dropEl(id);
+  FRAME++;
   if (AC){
     const anySolo = AROWS.some(i => S.tracks[TRACKS[i].id].solo);
     for (const i of AROWS){
@@ -79,25 +80,51 @@ function sync(){
     }
     master.gain.value = S.master.vol;
   }
-  const scrubbing = !S.playing || S.rate < 0, boost = S.playing && S.rate > 1 ? S.rate : 1;
-  for (const c of S.clips){
+  syncList(S.clips, S.t, '', 1, null, 0);
+  // elementos que no se usaron en este fotograma: se pausan y, tras un rato sin usarse, se liberan
+  for (const [k, r] of [...ELS]){
+    if (r.seen === FRAME) continue;
+    if (r.el && r.el.tagName !== 'IMG' && !r.el.paused) r.el.pause();
+    if (r.seen == null) r.seen = FRAME;
+    if (FRAME - r.seen > 240) dropEl(k);
+  }
+}
+// ctx = null para la secuencia activa; en secuencias anidadas {route, gain, pan, tracks}
+function syncList(list, t, pre, rateMul, ctx, depth){
+  const scrubbing = !S.playing || S.rate < 0, boost = (S.playing && S.rate > 1 ? S.rate : 1) * rateMul;
+  const tracks = ctx ? ctx.tracks : S.tracks;
+  const anySolo = ctx ? Object.keys(tracks).some(k => k[0] === 'A' && tracks[k].solo) : false;
+  for (const c of list){
     if (c.kind === 'text' || c.kind === 'image') continue;
-    const n = nextOf(c), e = cend(c) + (n && n.tIn ? n.tIn.dur : 0);
+    const n = nextIn(list, c), e = cend(c) + (n && n.tIn ? n.tIn.dur : 0);
     const active = !c.disabled && t >= c.start - 1e-4 && t < e;
-    const near = t >= c.start - 3 && t < e;
-    if (!near){ if (ELS.has(c.id) && (t < c.start - 6 || t > e + 2)) dropEl(c.id); continue; }
-    const r = elFor(c); if (!r) continue;
+    if (!(t >= c.start - 3 && t < e)) continue;
+    if (isNest(c)){
+      const sq = seqById(c.nestId); if (!sq || depth > 3) continue;
+      const lt = srcAt(c, t), npre = pre + c.id + '/';
+      if (c.kind === 'nest') syncList(sq.clips.filter(k => k.kind === 'video' || k.kind === 'nest'), lt, npre, rateMul * spd(c), {route:null, gain:0, pan:0, tracks:sq.tracks}, depth + 1);
+      else {
+        let g = active ? val(c, 'volume', t) / 100 * transK(c, t, list) * ampK(c, t) : 0;
+        let route = c.track;
+        if (ctx){ const tr = tracks[c.track] || {}; g *= ctx.gain * ((tr.mute || (anySolo && !tr.solo)) ? 0 : (tr.vol ?? 1)); route = ctx.route; }
+        syncList(sq.clips.filter(k => k.kind === 'audio' || k.kind === 'nesta'), lt, npre, rateMul * spd(c), {route, gain:g, pan:val(c, 'pan', t), tracks:sq.tracks}, depth + 1);
+      }
+      continue;
+    }
+    const r = elFor(c, pre + c.id); if (!r) continue;
+    r.seen = FRAME;
     const el = r.el, m = media(c.mediaId), rate = clamp(spd(c) * boost, .0625, 16);
     if (Math.abs(el.playbackRate - rate) > 1e-3) el.playbackRate = rate;
     if ('preservesPitch' in el && el.preservesPitch !== c.keepPitch) el.preservesPitch = c.keepPitch;
     if (active){
       const want = srcAt(c, t), maxT = Math.max(0, m.duration - .05), target = Math.min(want, maxT), frozen = want >= maxT;
       if (c.kind === 'audio'){
-        routeTrack(r, c.track);
-        let g = val(c, 'volume', t) / 100 * transK(c, t);
-        for (const f of c.fx) if (f.on && f.type === 'amp') g *= Math.pow(10, val(c, 'fx.' + f.id + '.db', t) / 20);
+        routeTrack(r, ctx ? ctx.route : c.track);
+        let g = val(c, 'volume', t) / 100 * transK(c, t, list) * ampK(c, t);
+        if (ctx){ const tr = tracks[c.track] || {}; g *= ctx.gain * ((tr.mute || (anySolo && !tr.solo)) ? 0 : (tr.vol ?? 1)); }
         if (frozen || scrubbing) g = S.playing ? 0 : g;
-        if (r.gain){ r.gain.gain.value = g; r.pan.pan.value = clamp(val(c, 'pan', t) / 100, -1, 1); }
+        const pan = clamp(val(c, 'pan', t) / 100 + (ctx ? ctx.pan / 100 : 0), -1, 1);
+        if (r.gain){ r.gain.gain.value = g; r.pan.pan.value = pan; }
         else el.volume = clamp(g, 0, 1);
       }
       if (!scrubbing && !frozen){
@@ -121,25 +148,33 @@ function resizeCanvas(){
   const r = EXPORT ? 1 : S.res, w = Math.round(S.seq.w / r), h = Math.round(S.seq.h / r);
   if (CV.width !== w || CV.height !== h){ CV.width = w; CV.height = h; PG = CV.getContext('2d'); }
 }
-function overlayFill(g, color, a){ g.save(); g.globalAlpha = clamp(a, 0, 1); g.fillStyle = color; g.fillRect(0, 0, S.seq.w, S.seq.h); g.restore(); }
+// Contexto de render: secuencia que se está dibujando (la activa o una anidada)
+let RC = {w:1920, h:1080, list:[], pre:'', depth:0, sc:1};
+const NESTC = new Map();
+function overlayFill(g, color, a){ g.save(); g.globalAlpha = clamp(a, 0, 1); g.fillStyle = color; g.fillRect(0, 0, RC.w, RC.h); g.restore(); }
 function draw(){
   resizeCanvas();
   const g = PG, sc = CV.width / S.seq.w;
   g.setTransform(sc, 0, 0, sc, 0, 0); g.globalAlpha = 1; g.filter = 'none'; g.globalCompositeOperation = 'source-over';
   g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0;
   g.fillStyle = '#000'; g.fillRect(0, 0, S.seq.w, S.seq.h);
-  for (const tid of [...videoIds()].reverse()){
-    if (S.tracks[tid].hide) continue;
-    const cur = S.clips.find(c => c.track === tid && !c.disabled && S.t >= c.start && S.t < cend(c));
+  RC = {w:S.seq.w, h:S.seq.h, list:S.clips, pre:'', depth:0, sc};
+  drawSeqInto(g, S.clips, S.tracks, S.t);
+}
+function drawSeqInto(g, list, tracks, t){
+  const vids = Object.keys(tracks).filter(isV).map(k => +k.slice(1)).sort((a, b) => a - b).map(n => 'V' + n);
+  for (const tid of vids){
+    if (tracks[tid].hide) continue;
+    const cur = list.find(c => c.track === tid && !c.disabled && t >= c.start && t < cend(c));
     if (!cur) continue;
-    const l = S.t - cur.start, e = cend(cur);
-    if (cur.tIn && l < cur.tIn.dur){ const A = prevOf(cur); renderTrans(g, cur.tIn.type, l / cur.tIn.dur, A && !A.disabled ? A : null, cur); }
-    else if (cur.tOut && !nextOf(cur) && e - S.t < cur.tOut.dur) renderTrans(g, cur.tOut.type, (e - S.t) / cur.tOut.dur, null, cur);
-    else drawClip(g, cur, S.t);
+    const l = t - cur.start, e = cend(cur);
+    if (cur.tIn && l < cur.tIn.dur){ const A = prevIn(list, cur); renderTrans(g, cur.tIn.type, l / cur.tIn.dur, A && !A.disabled ? A : null, cur, t); }
+    else if (cur.tOut && !nextIn(list, cur) && e - t < cur.tOut.dur) renderTrans(g, cur.tOut.type, (e - t) / cur.tOut.dur, null, cur, t);
+    else drawClip(g, cur, t);
   }
 }
-function renderTrans(g, type, k, A, B){
-  const W = S.seq.w, H = S.seq.h, t = S.t;
+function renderTrans(g, type, k, A, B, t){
+  const W = RC.w, H = RC.h;
   k = clamp(k, 0, 1);
   switch (type){
     case 'dissolve': if (A) drawClip(g, A, t); drawClip(g, B, t, {alpha:k}); break;
@@ -155,7 +190,7 @@ function renderTrans(g, type, k, A, B){
 const fxOn = (c, type) => c.fx.find(f => f.on && f.type === type);
 const fv = (c, f, p, t) => val(c, 'fx.' + f.id + '.' + p, t);
 function drawClip(g, c, t, o = {}){
-  const W = S.seq.w, H = S.seq.h, m = media(c.mediaId);
+  const W = RC.w, H = RC.h, m = media(c.mediaId);
   g.save();
   if (o.clip){ g.beginPath(); g.rect(...o.clip); g.clip(); }
   if (o.circle != null){ g.beginPath(); g.arc(W/2, H/2, Math.max(.1, o.circle), 0, Math.PI*2); g.clip(); }
@@ -172,8 +207,23 @@ function drawClip(g, c, t, o = {}){
     g.fillText('Medios sin conexión', 0, -20); g.font = '32px Inter, sans-serif'; g.fillText(m.name, 0, 40);
     g.restore(); return;
   }
-  const r = elFor(c), el = r && r.el;
-  const sw = el ? (el.videoWidth || el.naturalWidth) : 0, sh = el ? (el.videoHeight || el.naturalHeight) : 0;
+  let r, el, sw, sh;
+  if (c.kind === 'nest'){
+    // Secuencia anidada: se dibuja en un lienzo propio y se trata como una fuente más (efectos, máscaras, movimiento)
+    const sq = seqById(c.nestId); if (!sq || RC.depth > 3){ g.restore(); return; }
+    const key = RC.pre + c.id; let nc = NESTC.get(key); if (!nc){ nc = document.createElement('canvas'); NESTC.set(key, nc); }
+    const dens = Math.min(RC.sc * Math.max(1, k), 2048 / Math.max(sq.w, sq.h));
+    const nw = Math.max(2, Math.round(sq.w * dens)), nh = Math.max(2, Math.round(sq.h * dens));
+    if (nc.width !== nw || nc.height !== nh){ nc.width = nw; nc.height = nh; }
+    const ng = nc.getContext('2d'); ng.setTransform(1, 0, 0, 1, 0, 0); ng.clearRect(0, 0, nw, nh);
+    ng.setTransform(dens, 0, 0, dens, 0, 0); ng.globalAlpha = 1; ng.filter = 'none'; ng.globalCompositeOperation = 'source-over';
+    const saved = RC; RC = {w:sq.w, h:sq.h, list:sq.clips, pre:key + '/', depth:saved.depth + 1, sc:dens};
+    drawSeqInto(ng, sq.clips, sq.tracks, srcAt(c, t)); RC = saved;
+    r = {}; el = nc; sw = nw; sh = nh;
+  } else {
+    r = elFor(c, RC.pre + c.id); el = r && r.el;
+    sw = el ? (el.videoWidth || el.naturalWidth) : 0; sh = el ? (el.videoHeight || el.naturalHeight) : 0;
+  }
   if (!el || !sw){ g.restore(); return; }
   // Mientras el vídeo busca (readyState < 2) se dibuja el último fotograma bueno en lugar de negro
   let src = el;
@@ -187,7 +237,7 @@ function drawClip(g, c, t, o = {}){
     } else if (r.last && r.last.width === sw) src = r.last;
     else { g.restore(); return; }
   }
-  const fit = Math.min(W / sw, H / sh) * k, sc = CV.width / W, f = [];
+  const fit = Math.min(W / sw, H / sh) * k, sc = RC.sc, f = [];
   const lu = fxOn(c, 'lumetri');
   if (lu){
     const ex = fv(c, lu, 'exp', t), co = fv(c, lu, 'con', t), sa = fv(c, lu, 'sat', t);
@@ -290,6 +340,7 @@ function clipBounds(c, t){
   const W = S.seq.w, H = S.seq.h, k = val(c, 'scale', t) / 100;
   let w, h;
   if (c.kind === 'text'){ const b = textBox(c.props); w = b.w * k; h = b.h * k; }
+  else if (c.kind === 'nest'){ const sq = seqById(c.nestId); if (!sq) return null; const fit = Math.min(W / sq.w, H / sq.h) * k; w = sq.w * fit; h = sq.h * fit; }
   else {
     const m = media(c.mediaId), r = ELS.get(c.id), el = r && r.el;
     const sw = (el && (el.videoWidth || el.naturalWidth)) || (m && m.w), sh = (el && (el.videoHeight || el.naturalHeight)) || (m && m.h);

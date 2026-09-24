@@ -387,3 +387,15 @@ body.t-trackfwd #tracks,body.t-trackfwd #tracks .clip,body.t-trackfwd #tracks .c
 .kd.in{border-radius:0 50% 50% 50%}
 .kd.out{border-radius:50% 50% 0 50%}
 .kd.hold{background:#d9a441;border-radius:0}
+
+/* secuencias y secuencias anidadas */
+.clip.k-nest{background:#4e9a7b}.clip.sel.k-nest{background:#67b894}
+.clip.k-nesta{background:#3a7f5f}.clip.sel.k-nesta{background:#4f9a77}
+.pbadge.seq{background:#4e9a7b}
+.seqthumb{color:#79c9a4;background:#15241e}
+.seqthumb svg{width:40px;height:40px}
+.pitem.seqi.cur .pname{color:#9fe0c1}
+#seqTabs .tab{gap:6px}
+#seqTabs .tx{color:#888;width:14px;height:14px;line-height:12px;border-radius:2px}
+#seqTabs .tx:hover{background:#444;color:#fff}
+#seqTabs .tx0{color:#555}

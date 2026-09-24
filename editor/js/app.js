@@ -40,7 +40,7 @@ function editMarkerAtPlayhead(){ const mk = S.markers.find(m => Math.abs(m.t - S
 function toggleSnap(){ S.snap = !S.snap; $('#btnSnap').classList.toggle('on', S.snap); status('Ajustar en la línea de tiempo: ' + (S.snap ? 'activado' : 'desactivado')); }
 const MENUS = {
   'Archivo': [
-    ['Nuevo proyecto', 'Ctrl+Alt+N', newProject], ['Abrir proyecto…', 'Ctrl+O', openProjectFile], ['Guardar', 'Ctrl+S', saveProjectFile], '-',
+    ['Nuevo proyecto', 'Ctrl+Alt+N', newProject], ['Nueva secuencia…', 'Ctrl+N', newSequenceDialog], ['Abrir proyecto…', 'Ctrl+O', openProjectFile], ['Guardar', 'Ctrl+S', saveProjectFile], '-',
     ['Importar…', 'Ctrl+I', () => $('#fileIn').click()], '-',
     ['Exportar medios…', 'Ctrl+M', () => setMode('export')], ['Exportación rápida', '', quickExport], ['Exportar fotograma', 'Ctrl+Mayús+E', exportFrame]],
   'Edición': [
@@ -50,7 +50,7 @@ const MENUS = {
     ['Seleccionar todo', 'Ctrl+A', selectAll], ['Anular la selección de todo', 'Ctrl+Mayús+A', deselectAll], '-',
     ['Métodos abreviados de teclado', 'Ctrl+Alt+K', showShortcuts]],
   'Clip': [
-    ['Velocidad/duración…', 'Ctrl+R', speedDialog], '-',
+    ['Velocidad/duración…', 'Ctrl+R', speedDialog], ['Anidar…', '', nestSelection], '-',
     ['Insertar', ',', () => insertFromSource(false)], ['Sobrescribir', '.', () => insertFromSource(true)], '-',
     ['Habilitar / Deshabilitar', 'Mayús+E', toggleEnable], ['Vincular / Desvincular', 'Ctrl+L', toggleLink], '-',
     ['Ajustar al tamaño del fotograma', '', () => scaleToFrame(false)], ['Rellenar el fotograma', '', () => scaleToFrame(true)]],
@@ -300,6 +300,7 @@ function onKey(e){
       case 'a': sh ? deselectAll() : selectAll(); break;
       case 'i': $('#fileIn').click(); break;
       case 'o': openProjectFile(); break;
+      case 'n': newSequenceDialog(); break;
       case 'm': sh ? jumpMarker(-1) : setMode('export'); break;
       case 's': saveProjectFile(); break;
       case 't': addTitle(); break;
@@ -427,7 +428,7 @@ function init(){
     if (d && Array.isArray(d.clips) && (d.clips.length || (d.media || []).length)) restored = load(d);
   } catch(e){ console.warn('No se pudo restaurar el proyecto', e); }
   if (!restored){ renderProject(); refresh(true); setZoom(40); }
-  syncName(); focusUI(); setTool('select');
+  syncName(); focusUI(); setTool('select'); renderSeqTabs();
   status('Listo · Importa medios con Ctrl+I o arrastrándolos · F1: métodos abreviados de teclado');
   requestAnimationFrame(loop);
 }

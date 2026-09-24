@@ -165,7 +165,7 @@ const TRANS_NAMES = {...VTRANS, ...ATRANS};
 function applyTransition(c, side, type, dur){
   const isA = type in ATRANS;
   if (S.tracks[c.track].lock){ toast('La pista está bloqueada'); return null; }
-  if (isA !== (c.kind === 'audio')){ toast(isA ? 'Las transiciones de audio se aplican a clips de audio' : 'Las transiciones de vídeo se aplican a clips de vídeo, imágenes o títulos'); return null; }
+  if (isA !== isAud(c)){ toast(isA ? 'Las transiciones de audio se aplican a clips de audio' : 'Las transiciones de vídeo se aplican a clips de vídeo, imágenes o títulos'); return null; }
   let target = c, s = side;
   if (side === 'out'){ const n = nextOf(c); if (n){ target = n; s = 'in'; } }
   const d = q(clamp(dur || 1, 1 / FPS, target.dur));
@@ -174,8 +174,8 @@ function applyTransition(c, side, type, dur){
   return target;
 }
 function applyDefaultTransitions(mode){
-  const want = c => mode === 'both' || (mode === 'a') === (c.kind === 'audio');
-  const def = c => ({type: c.kind === 'audio' ? 'power' : 'dissolve', dur: q(Math.min(1, c.dur))});
+  const want = c => mode === 'both' || (mode === 'a') === isAud(c);
+  const def = c => ({type: isAud(c) ? 'power' : 'dissolve', dur: q(Math.min(1, c.dur))});
   const t = q(S.t); let n = 0;
   edit(() => {
     if (S.sel.size){
@@ -218,7 +218,7 @@ const FXLIB = {
 function applyEffect(c, type){
   const d = FXLIB[type]; if (!d || !c) return;
   if (S.tracks[c.track].lock) return toast('La pista está bloqueada');
-  if (!!d.audio !== (c.kind === 'audio')) return toast(d.audio ? 'Este efecto se aplica a clips de audio' : 'Este efecto se aplica a clips de vídeo, imágenes o títulos');
+  if (!!d.audio !== isAud(c)) return toast(d.audio ? 'Este efecto se aplica a clips de audio' : 'Este efecto se aplica a clips de vídeo, imágenes o títulos');
   edit(() => { const p = {...(d.opts || {})}; d.params.forEach(r => p[r[1]] = r[6]); c.fx.push({id:nid('f'), type, on:true, p}); }, 'Aplicar ' + d.name);
   S.sel = new Set([c.id]); S.primary = c.id; S.selTrans = null;
   setTab('fx'); renderTimeline(); renderEffects(true);
@@ -226,7 +226,7 @@ function applyEffect(c, type){
 }
 function applyEffectMany(cs, type){
   const d = FXLIB[type]; if (!d) return;
-  const targets = cs.filter(c => c && !S.tracks[c.track].lock && !!d.audio === (c.kind === 'audio'));
+  const targets = cs.filter(c => c && !S.tracks[c.track].lock && !!d.audio === isAud(c));
   if (!targets.length) return toast(d.audio ? 'Selecciona un clip de audio' : 'Selecciona un clip de vídeo');
   if (targets.length === 1) return applyEffect(targets[0], type);
   edit(() => targets.forEach(c => { const p = {...(d.opts || {})}; d.params.forEach(r => p[r[1]] = r[6]); c.fx.push({id:nid('f'), type, on:true, p}); }), 'Aplicar ' + d.name);
@@ -356,6 +356,7 @@ function insertFromSource(over){
   status(over ? 'Clip sobrescrito en la secuencia' : 'Clip insertado en la secuencia');
 }
 function placeMedia(mid, row, t, insert, range){
+  if (String(mid).startsWith('seq:')) return placeSeq(mid.slice(4), row, t, insert);
   const m = media(mid); if (!m || m.offline) return;
   const n = TRACKS[clamp(row, 0, TRACKS.length - 1)].id.slice(1);
   const st = q(snapTime(Math.max(0, t), new Set()).t);
@@ -398,10 +399,10 @@ function jumpEdit(dir){
 
 /* ================================= secuencia ================================= */
 const SEQ_PRESETS = [[1920,1080,'HD 1080p · 16:9 (1920×1080)'],[1080,1920,'Vertical 9:16 · Reels, TikTok, Shorts (1080×1920)'],[1080,1080,'Cuadrado 1:1 · Instagram (1080×1080)'],[1080,1350,'Vertical 4:5 · Instagram (1080×1350)'],[1280,720,'HD 720p · 16:9 (1280×720)'],[3840,2160,'4K UHD · 16:9 (3840×2160)']];
-function setSeq(w, h){ S.seq = {w, h}; draw(); setMonZoom(S.monZoom); renderTimeline(); scheduleSave(); }
+function setSeq(w, h){ S.seq = {w, h}; storeSeq(); draw(); setMonZoom(S.monZoom); renderTimeline(); scheduleSave(); }
 function seqSettings(){
-  modal('Ajustes de secuencia', `<label>Tamaño del fotograma<select id="seqP">${SEQ_PRESETS.map(([w, h, l]) => `<option value="${w}x${h}"${S.seq.w === w && S.seq.h === h ? ' selected' : ''}>${l}</option>`).join('')}</select></label><div class="dim">Base de tiempo: ${FPS} fotogramas/segundo · Audio: 48 000 Hz estéreo</div>`,
-    [['Cancelar'], ['Aceptar', m => { const [w, h] = m.querySelector('#seqP').value.split('x').map(Number); setSeq(w, h); toast(`Secuencia: ${w}×${h}`); }, true]]);
+  modal('Ajustes de secuencia', `<label>Nombre de la secuencia<input id="seqN" value="${esc(seqName())}"></label><label>Tamaño del fotograma<select id="seqP">${SEQ_PRESETS.map(([w, h, l]) => `<option value="${w}x${h}"${S.seq.w === w && S.seq.h === h ? ' selected' : ''}>${l}</option>`).join('')}</select></label><div class="dim">Base de tiempo: ${FPS} fotogramas/segundo · Audio: 48 000 Hz estéreo</div>`,
+    [['Cancelar'], ['Aceptar', m => { const n = m.querySelector('#seqN').value.trim(); if (n) curSeqObj().name = n; const [w, h] = m.querySelector('#seqP').value.split('x').map(Number); setSeq(w, h); renderSeqTabs(); renderProject(); toast(`${seqName()}: ${w}×${h}`); }, true]]);
 }
 
 /* ============================ plantillas de gráficos ============================ */
@@ -531,7 +532,7 @@ function pasteAttributes(){
           for (const k in src.kf) if (k.startsWith('fx.' + f.id + '.')) c.kf['fx.' + nf.id + k.slice(3 + f.id.length)] = src.kf[k].map(x => ({...x, t: x.t * (c.dur / src.dur)}));
         }
       }
-      if (g.has('speed') && mediaBased(c) === mediaBased(src)){
+      if (g.has('speed') && hasSrc(c) === hasSrc(src)){
         const nd = Math.max(1 / FPS, q(c.dur * spd(c) / spd(src)));
         scaleKf(c, nd / c.dur); c.speed = spd(src); c.dur = nd; clampTrans(c);
       }
@@ -553,4 +554,98 @@ function removeAttributes(){
     }
     overwrite(cs.map(c => c.id));
   }, 'Eliminar atributos'));
+}
+
+/* ============================ secuencias y anidamiento ============================ */
+function switchSeq(id){
+  if (id === S.curSeq) return;
+  const o = S.seqs.find(s => s.id === id); if (!o) return;
+  pause(); storeSeq(); activateSeq(o);
+  buildTracks(); buildMixer(); refresh(true); setZoom(S.zoom); tracksEl.scrollLeft = o.scroll || 0; renderSeqTabs(); renderProject(); setMonZoom(S.monZoom);
+  status('Secuencia abierta: ' + o.name);
+}
+function nextSeqName(base){ let n = S.seqs.length + 1, name; do { name = `${base} ${String(n).padStart(2, '0')}`; n++; } while (S.seqs.some(s => s.name === name)); return name; }
+function newSequence(name, w, h){
+  storeSeq();
+  const o = makeSeqObj(name || nextSeqName('Secuencia'), w || S.seq.w, h || S.seq.h);
+  S.seqs.push(o); switchSeq(o.id); scheduleSave();
+  return o;
+}
+function newSequenceDialog(){
+  modal('Nueva secuencia', `<label>Nombre de la secuencia<input id="nsN" value="${esc(nextSeqName('Secuencia'))}"></label><label>Tamaño del fotograma<select id="nsP">${SEQ_PRESETS.map(([w, h, l]) => `<option value="${w}x${h}"${S.seq.w === w && S.seq.h === h ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`,
+    [['Cancelar'], ['Aceptar', m => { const [w, h] = m.querySelector('#nsP').value.split('x').map(Number); newSequence(m.querySelector('#nsN').value.trim(), w, h); }, true]]);
+}
+function renameSeq(id){
+  const o = S.seqs.find(s => s.id === id); if (!o) return;
+  modal('Cambiar nombre de la secuencia', `<label>Nombre<input id="rsN" value="${esc(o.name)}"></label>`,
+    [['Cancelar'], ['Aceptar', m => { const n = m.querySelector('#rsN').value.trim(); if (n){ o.name = n; renderSeqTabs(); renderProject(); renderTimeline(); scheduleSave(); } }, true]]);
+}
+function duplicateSeq(id){
+  const o = seqById(id); if (!o) return;
+  const d = JSON.parse(JSON.stringify(o)); d.id = nid('s'); d.name = o.name + ' copia';
+  d.clips.forEach(c => c.id = nid());
+  S.seqs.push(d); renderProject(); scheduleSave(); toast('Secuencia duplicada: ' + d.name);
+}
+function deleteSeq(id){
+  if (S.seqs.length <= 1) return toast('El proyecto debe tener al menos una secuencia');
+  const users = S.seqs.filter(s => s.id !== id && seqById(s.id).clips.some(c => isNest(c) && c.nestId === id));
+  if (users.length) return toast('No se puede borrar: se usa anidada en ' + users.map(s => s.name).join(', '));
+  const o = S.seqs.find(s => s.id === id);
+  if (!confirm(`¿Borrar la secuencia "${o.name}"? Esta acción no se puede deshacer.`)) return;
+  if (id === S.curSeq) switchSeq(S.seqs.find(s => s.id !== id).id);
+  S.seqs = S.seqs.filter(s => s.id !== id); S.openSeqs = S.openSeqs.filter(x => x !== id);
+  UNDO.splice(0, UNDO.length, ...UNDO.filter(u => JSON.parse(u.s).s !== id)); REDO.length = 0;
+  renderSeqTabs(); renderProject(); renderHistory(); scheduleSave();
+}
+function closeSeqTab(id){
+  if (S.openSeqs.length <= 1) return;
+  S.openSeqs = S.openSeqs.filter(x => x !== id);
+  if (id === S.curSeq) switchSeq(S.openSeqs[S.openSeqs.length - 1]);
+  renderSeqTabs(); scheduleSave();
+}
+function makeNestClips(sq, start, vT, aT){
+  const dur = seqEndOf(sq); if (dur <= 0) return [];
+  const hasVid = sq.clips.some(c => visual(c)), hasAud = sq.clips.some(c => isAud(c));
+  const link = hasVid && hasAud ? nid('l') : null, res = [];
+  if (hasVid){ const c = newClip('nest', null, vT, start, 0, dur, link); c.nestId = sq.id; res.push(c); }
+  if (hasAud){ const c = newClip('nesta', null, aT, start, 0, dur, link); c.nestId = sq.id; res.push(c); }
+  return res;
+}
+function placeSeq(id, row, t, insert){
+  const sq = seqById(id); if (!sq) return;
+  if (containsSeq(id, S.curSeq)) return toast('No se puede anidar una secuencia dentro de sí misma');
+  if (seqEndOf(sq) <= 0) return toast('La secuencia está vacía');
+  const n = TRACKS[clamp(row, 0, TRACKS.length - 1)].id.slice(1);
+  const st = q(snapTime(Math.max(0, t), new Set()).t);
+  edit(() => {
+    const cs = makeNestClips(sq, st, S.tracks['V' + n] ? 'V' + n : 'V1', S.tracks['A' + n] ? 'A' + n : 'A1').filter(c => !S.tracks[c.track].lock);
+    if (!cs.length) return;
+    if (insert){ const d = cs[0].dur; splitAllAt(st); for (const c of S.clips) if (!S.tracks[c.track].lock && c.start >= st - 1e-6) c.start = q(c.start + d); }
+    S.clips.push(...cs); if (!insert) overwrite(cs.map(c => c.id));
+    S.sel = new Set(cs.map(c => c.id)); S.primary = cs[0].id; S.selTrans = null;
+  }, 'Anidar secuencia');
+  status(`"${sq.name}" añadida como secuencia anidada`);
+}
+// Clip > Anidar: los clips seleccionados pasan a una secuencia nueva que los sustituye
+function nestSelection(){
+  const cs = [...S.sel].map(clip).filter(c => c && !S.tracks[c.track].lock);
+  if (!cs.length) return toast('Selecciona los clips que quieres anidar');
+  storeSeq();
+  const t0 = Math.min(...cs.map(c => c.start));
+  const sq = makeSeqObj(nextSeqName('Secuencia anidada'), S.seq.w, S.seq.h);
+  sq.tracks = {}; for (const k in S.tracks) sq.tracks[k] = Object.assign(TRACK_DEF(), {h:S.tracks[k].h});
+  sq.clips = cs.map(c => { const n = JSON.parse(JSON.stringify(c)); n.id = nid(); n.start = q(c.start - t0); return n; });
+  const lm = {}; sq.clips.forEach(c => { if (c.link) c.link = lm[c.link] || (lm[c.link] = nid('l')); });
+  const vNums = cs.filter(visual).map(c => +c.track.slice(1)), aNums = cs.filter(isAud).map(c => +c.track.slice(1));
+  const vT = 'V' + (vNums.length ? Math.min(...vNums) : 1), aT = 'A' + (aNums.length ? Math.min(...aNums) : 1);
+  S.seqs.push(sq); if (!S.openSeqs.includes(sq.id)) S.openSeqs.push(sq.id);
+  edit(() => {
+    const ids = new Set(cs.map(c => c.id));
+    S.clips = S.clips.filter(c => !ids.has(c.id));
+    const ns = makeNestClips(sq, t0, vT, aT);
+    S.clips.push(...ns); overwrite(ns.map(c => c.id));
+    S.sel = new Set(ns.map(c => c.id)); S.primary = ns[0] && ns[0].id;
+  }, 'Anidar');
+  renderProject(); renderSeqTabs();
+  status(`Clips anidados en "${sq.name}" (doble clic para abrirla)`);
 }

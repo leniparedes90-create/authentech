@@ -65,7 +65,7 @@ function renderTimeline(){
     d.dataset.id = c.id;
     d.style.left = c.start * S.zoom + 'px'; d.style.width = Math.max(3, px) + 'px'; d.style.top = rowTop(row) + 'px'; d.style.height = (rowH(row) - 2) + 'px';
     if (c.color) d.style.background = sel ? lighten(c.color) : c.color;
-    const label = c.kind === 'text' ? (c.props.text || 'Título').split('\n')[0] : (m ? m.name : 'Medio');
+    const label = c.kind === 'text' ? (c.props.text || 'Título').split('\n')[0] : isNest(c) ? ((S.seqs.find(s => s.id === c.nestId) || {}).name || 'Secuencia') : (m ? m.name : 'Medio');
     const fxd = c.fx.length > 0 || Object.keys(c.kf).some(k => c.kf[k].length) || spd(c) !== 1;
     let html = `<div class="clabel"><span class="fxb${fxd ? ' on' : ''}">fx</span><span class="nmx">${c.link ? '<u>' : ''}${esc(label)}${c.link ? '</u>' : ''}${spd(c) !== 1 ? ` [${Math.round(spd(c) * 100)}%]` : ''}${m && m.offline ? ' (sin conexión)' : ''}</span></div>`;
     if ((c.kind === 'video' || c.kind === 'image') && m && m.thumb && px > 30) html += `<div class="cthumb" style="background-image:url(${m.thumb})"></div>`;
@@ -73,7 +73,7 @@ function renderTimeline(){
     if (c.tOut && !nextOf(c)) html += transHTML(c, 'out');
     html += '<div class="ch l"></div><div class="ch r"></div>';
     d.innerHTML = html;
-    if (c.kind === 'audio' && px > 4){ const cv = document.createElement('canvas'); drawWave(cv, c, m, px); d.appendChild(cv); }
+    if (isAud(c) && px > 4){ const cv = document.createElement('canvas'); drawWave(cv, c, m, px); d.appendChild(cv); }
     frag.appendChild(d);
   }
   if (S.gap){
@@ -233,6 +233,7 @@ function onTracksDown(e){
   if (!e.altKey) expandLinked();
   S.primary = c.id;
   const cls = e.target.classList, edge = cls.contains('l') ? 'l' : cls.contains('r') ? 'r' : null;
+  if (e.detail === 2 && !edge && isNest(c)){ switchSeq(c.nestId); return; }
   if (e.detail === 2 && !edge && c.mediaId){ openSource(c.mediaId, c); renderTimeline(); renderEffects(); return; }
   if (tool === 'slip') startSlip(e, c);
   else if (edge && tool === 'rolling') startRoll(e, c, edge);
@@ -240,7 +241,7 @@ function onTracksDown(e){
   else if (edge && tool === 'rate') startTrim(e, c, edge, 'rate');
   else if (edge) startTrim(e, c, edge, 'trim');
   else if (tool === 'select'){
-    if (c.kind === 'audio' && !hasKf(c, 'volume') && onVolLine(e, cEl, c)) drag = {mode:'vol', x0:e.clientX, y0:e.clientY, c, v0:c.props.volume, before:snap(), moved:false};
+    if (isAud(c) && !hasKf(c, 'volume') && onVolLine(e, cEl, c)) drag = {mode:'vol', x0:e.clientX, y0:e.clientY, c, v0:c.props.volume, before:snap(), moved:false};
     else startMove(e, c.id);
   }
   renderTimeline(); renderEffects();
@@ -326,12 +327,12 @@ function dragTrim(d){
       if (L){ lo = Math.max(lo, o.dur - maxD, -o.start); hi = Math.min(hi, o.dur - minD); }
       else { lo = Math.max(lo, minD - o.dur); hi = Math.min(hi, maxD - o.dur); }
     } else if (L){
-      if (mediaBased(k)) lo = Math.max(lo, -o.in / s);
+      if (hasSrc(k)) lo = Math.max(lo, -o.in / s);
       if (kind !== 'ripple') lo = Math.max(lo, -o.start);
       hi = Math.min(hi, o.dur - 1 / FPS);
     } else {
       lo = Math.max(lo, -(o.dur - 1 / FPS));
-      if (mediaBased(k) && m) hi = Math.min(hi, (m.duration - o.in) / s - o.dur);
+      { const mx = srcMax(k); if (mx != null) hi = Math.min(hi, (mx - o.in) / s - o.dur); }
     }
   }
   d = lo > hi ? 0 : clamp(d, lo, hi);
@@ -343,7 +344,7 @@ function dragTrim(d){
       k.speed = o.dur * s / nd; k.dur = nd; if (L) k.start = q(o.start + d);
       scaleKf(k, nd / o.dur);
     } else if (L){
-      k.in = mediaBased(k) ? Math.max(0, o.in + d * s) : 0; k.dur = q(o.dur - d); shiftKf(k, -d);
+      k.in = hasSrc(k) ? Math.max(0, o.in + d * s) : 0; k.dur = q(o.dur - d); shiftKf(k, -d);
       if (kind !== 'ripple') k.start = q(o.start + d);
     } else k.dur = q(o.dur + d);
     if (k.tIn && k.tIn.dur > k.dur) k.tIn.dur = k.dur;
@@ -362,15 +363,15 @@ function dragRoll(d){
   for (const p of drag.pairs){
     const A = clip(p.a), B = clip(p.b), mA = media(A.mediaId);
     lo = Math.max(lo, -(p.aDur - 1 / FPS));
-    if (mediaBased(A) && mA) hi = Math.min(hi, (mA.duration - A.in) / spd(A) - p.aDur);
+    { const mx = srcMax(A); if (mx != null) hi = Math.min(hi, (mx - A.in) / spd(A) - p.aDur); }
     hi = Math.min(hi, p.bDur - 1 / FPS);
-    if (mediaBased(B)) lo = Math.max(lo, -p.bIn / spd(B));
+    if (hasSrc(B)) lo = Math.max(lo, -p.bIn / spd(B));
   }
   d = lo > hi ? 0 : clamp(d, lo, hi);
   for (const p of drag.pairs){
     const A = clip(p.a), B = clip(p.b);
     A.dur = q(p.aDur + d); clampTrans(A);
-    B.start = q(p.bStart + d); B.in = mediaBased(B) ? Math.max(0, p.bIn + d * spd(B)) : 0; B.dur = q(p.bDur - d);
+    B.start = q(p.bStart + d); B.in = hasSrc(B) ? Math.max(0, p.bIn + d * spd(B)) : 0; B.dur = q(p.bDur - d);
     B.kf = JSON.parse(p.bKf); shiftKf(B, -d); clampTrans(B);
   }
   status(`Edición de rodillo: ${d >= 0 ? '+' : '-'}${tc(Math.abs(d))}`);
@@ -379,12 +380,12 @@ function dragRoll(d){
 function dragSlip(d){
   let lo = -Infinity, hi = Infinity;
   for (const o of drag.orig){
-    const k = clip(o.id), m = media(k.mediaId), s = spd(k);
-    if (!mediaBased(k) || !m) continue;
-    hi = Math.min(hi, o.in / s); lo = Math.max(lo, (o.in - (m.duration - k.dur * s)) / s);
+    const k = clip(o.id), mx = srcMax(k), s = spd(k);
+    if (!hasSrc(k) || mx == null) continue;
+    hi = Math.min(hi, o.in / s); lo = Math.max(lo, (o.in - (mx - k.dur * s)) / s);
   }
   d = lo > hi ? 0 : clamp(d, lo, hi);
-  for (const o of drag.orig){ const k = clip(o.id); if (mediaBased(k)) k.in = Math.max(0, o.in - d * spd(k)); }
+  for (const o of drag.orig){ const k = clip(o.id); if (hasSrc(k)) k.in = Math.max(0, o.in - d * spd(k)); }
   const k = clip(drag.anchor);
   status(`Desplazar · Entrada ${tc(k.in)} · Salida ${tc(k.in + k.dur * spd(k))}`);
 }
@@ -409,9 +410,9 @@ function onDragOver(e){
     if (cEl) cEl.classList.add('drop-fx');
     return;
   }
-  const {row, t} = posFrom(e), m = media(DRAGMEDIA), gh = $('#ghost');
+  const {row, t} = posFrom(e), m = media(DRAGMEDIA), gh = $('#ghost'), sqd = String(DRAGMEDIA || '').startsWith('seq:') ? seqEndOf(seqById(DRAGMEDIA.slice(4))) : null;
   const st = snapTime(Math.max(0, t), new Set()).t;
-  const dur = DRAGRANGE ? DRAGRANGE.out - DRAGRANGE.in : m ? srcDurOf(m) : 5;
+  const dur = DRAGRANGE ? DRAGRANGE.out - DRAGRANGE.in : sqd != null ? sqd : m ? srcDurOf(m) : 5;
   gh.style.display = 'block'; gh.style.left = st * S.zoom + 'px'; gh.style.width = dur * S.zoom + 'px'; const gr = clamp(row, 0, TRACKS.length - 1); gh.style.top = rowTop(gr) + 1 + 'px'; gh.style.height = (rowH(gr) - 2) + 'px';
 }
 async function onDrop(e){
@@ -454,10 +455,11 @@ function onTracksCtx(e){
     ['Borrar', 'Supr', del], ['Eliminar con ondulación', 'Mayús+Supr', rippleDel], '-',
     ['Habilitar', 'Mayús+E', toggleEnable, false, !c.disabled],
     [linked ? 'Desvincular' : 'Vincular', 'Ctrl+L', toggleLink, !linked && S.sel.size < 2], '-',
-    ['Velocidad/duración…', 'Ctrl+R', speedDialog],
+    ['Velocidad/duración…', 'Ctrl+R', speedDialog], ['Anidar…', '', nestSelection],
+    ...(isNest(c) ? [['Abrir secuencia anidada', '', () => switchSeq(c.nestId)]] : []),
     ['Ajustar al tamaño del fotograma', '', () => scaleToFrame(false), !(c.kind === 'video' || c.kind === 'image')],
     ['Rellenar el fotograma', '', () => scaleToFrame(true), !(c.kind === 'video' || c.kind === 'image')],
-    ['Aplicar transición predeterminada', 'Ctrl+D', () => applyDefaultTransitions(c.kind === 'audio' ? 'a' : 'v')], '-',
+    ['Aplicar transición predeterminada', 'Ctrl+D', () => applyDefaultTransitions(isAud(c) ? 'a' : 'v')], '-',
     ['Mostrar en el proyecto', '', () => { S.projSel = c.mediaId; setBotTab('project'); renderProject(); }, !c.mediaId],
     ['Abrir en el Monitor de origen', '', () => openSource(c.mediaId, c), !c.mediaId], '-',
     {swatches: setColor}

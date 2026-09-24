@@ -39,10 +39,15 @@ const cend = c => c.start + c.dur;
 const srcAt = (c, t) => c.in + (t - c.start) * spd(c);
 const seqEnd = () => S.clips.reduce((e, c) => Math.max(e, cend(c)), 0);
 const mediaBased = c => c.kind === 'video' || c.kind === 'audio';
-const visual = c => c.kind !== 'audio';
+const isNest = c => c.kind === 'nest' || c.kind === 'nesta';
+const isAud = c => c.kind === 'audio' || c.kind === 'nesta';
+const visual = c => !isAud(c);
+const hasSrc = c => mediaBased(c) || isNest(c);   // clips con punto de entrada y duración de origen
 const srcDurOf = m => m.type === 'image' ? 5 : m.duration;
-const prevOf = c => S.clips.find(o => o !== c && o.track === c.track && Math.abs(cend(o) - c.start) < 1e-3);
-const nextOf = c => S.clips.find(o => o !== c && o.track === c.track && Math.abs(o.start - cend(c)) < 1e-3);
+const prevIn = (list, c) => list.find(o => o !== c && o.track === c.track && Math.abs(cend(o) - c.start) < 1e-3);
+const nextIn = (list, c) => list.find(o => o !== c && o.track === c.track && Math.abs(o.start - cend(c)) < 1e-3);
+const prevOf = c => prevIn(S.clips, c);
+const nextOf = c => nextIn(S.clips, c);
 function layoutTracks(){
   const ids = Object.keys(S.tracks);
   const vs = ids.filter(isV).map(id => +id.slice(1)).sort((a, b) => b - a), as = ids.filter(id => !isV(id)).map(id => +id.slice(1)).sort((a, b) => a - b);
@@ -54,6 +59,44 @@ function rowTop(i){ let y = 0; for (let k = 0; k < i; k++) y += rowH(k); return 
 function rowAt(y){ let acc = 0; for (let i = 0; i < TRACKS.length; i++){ acc += rowH(i); if (y < acc) return i; } return TRACKS.length; }
 const videoIds = () => VROWS.map(i => TRACKS[i].id);   // de arriba (Vn) a abajo (V1)
 layoutTracks();
+
+/* ================================= secuencias ================================= */
+// S.seqs guarda todas las secuencias; la activa vive en S.clips/S.tracks/S.seq… y se vuelca con storeSeq()
+function makeSeqObj(name, w, h){ return {id:nid('s'), name, w, h, clips:[], markers:[], seqIn:null, seqOut:null, tracks:freshTracks(), t:0, zoom:40}; }
+S.seqs = [Object.assign(makeSeqObj('Secuencia 01', 1920, 1080), {tracks:S.tracks, clips:S.clips})];
+S.curSeq = S.seqs[0].id; S.openSeqs = [S.curSeq];
+const curSeqObj = () => S.seqs.find(s => s.id === S.curSeq);
+const seqName = () => (curSeqObj() || {}).name || 'Secuencia';
+function storeSeq(){
+  const o = curSeqObj(); if (!o) return;
+  Object.assign(o, {clips:S.clips, markers:S.markers, seqIn:S.seqIn, seqOut:S.seqOut, tracks:S.tracks, w:S.seq.w, h:S.seq.h, t:S.t, zoom:S.zoom, scroll:tracksEl.scrollLeft});
+}
+function seqById(id){ if (id === S.curSeq) storeSeq(); return S.seqs.find(s => s.id === id); }
+const seqEndOf = sq => (sq && sq.clips || []).reduce((e, c) => Math.max(e, cend(c)), 0);
+function srcMax(c){
+  if (isNest(c)) return seqEndOf(seqById(c.nestId));
+  if (mediaBased(c)){ const m = media(c.mediaId); return m ? m.duration : null; }
+  return null;
+}
+// ¿La secuencia `id` contiene (directa o indirectamente) a la secuencia `target`?
+function containsSeq(id, target, depth = 0){
+  if (id === target) return true;
+  const sq = seqById(id); if (!sq || depth > 8) return false;
+  return sq.clips.some(c => isNest(c) && containsSeq(c.nestId, target, depth + 1));
+}
+function normTracks(tr, clips){
+  const o = {};
+  if (tr) for (const k in tr) if (/^[VA]\d+$/.test(k)) o[k] = Object.assign(TRACK_DEF(), tr[k]);
+  if (!tr) Object.assign(o, freshTracks());
+  for (const k of ['V1', 'A1', ...clips.map(c => c.track)]) if (!o[k]) o[k] = TRACK_DEF();
+  return o;
+}
+function activateSeq(o){
+  S.curSeq = o.id; S.clips = o.clips; S.markers = o.markers || []; S.seqIn = o.seqIn ?? null; S.seqOut = o.seqOut ?? null;
+  S.tracks = o.tracks; S.seq = {w:o.w, h:o.h}; S.t = o.t || 0; S.zoom = o.zoom || S.zoom;
+  if (!S.openSeqs.includes(o.id)) S.openSeqs.push(o.id);
+  layoutTracks(); S.sel.clear(); S.selTrans = null; S.gap = null; S.primary = null;
+}
 
 function tc(t){
   const f = Math.floor(Math.max(0, t) * FPS + 1e-6);
@@ -165,6 +208,7 @@ const ICON = {
   wave: '<svg viewBox="0 0 16 16"><path d="M1 8h1.5M3 5.5v5M5 3v10M7 6v4M9 2v12M11 4.5v7M13 6.5v3M15 8h-.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>',
   import: P('<path d="M2 3.5h4.5l1.5 1.5h6v8.5H2z" opacity=".55"/><path d="M7.2 6h1.6v3.2l1.3-1.3 1.1 1.1L8 12.2 4.8 9l1.1-1.1 1.3 1.3z"/>'),
   stopwatch: '<svg viewBox="0 0 16 16"><circle cx="8" cy="9" r="5.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 9V6M6.3 1.8h3.4M8 1.8v2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>',
+  seq: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 3h13v10h-13z" opacity=".35"/><path d="M3 5h5v2H3zM6 8h6v2H6zM4 11h4v1.5H4z"/></svg>',
   trash: P('<path d="M5.5 2h5l.5 1.5H14V5H2V3.5h3zM3.5 6h9l-.8 8H4.3z"/>'),
   folder: P('<path d="M1.5 3h5l1.5 1.5h6.5v8.5h-13z"/>'),
   home: P('<path d="M8 1.8l6.5 5.6V14H9.8v-4H6.2v4H1.5V7.4z"/>'),
@@ -225,7 +269,7 @@ function closeCtx(){ const m = $('#ctx'); if (m) m.remove(); }
 
 /* ================================== historial ================================== */
 const UNDO = [], REDO = [];
-const snap = () => JSON.stringify({c:S.clips, m:S.markers, i:S.seqIn, o:S.seqOut, tl:Object.fromEntries(Object.entries(S.tracks).map(([k, v]) => [k, {h:v.h, name:v.name}]))});
+const snap = () => JSON.stringify({s:S.curSeq, c:S.clips, m:S.markers, i:S.seqIn, o:S.seqOut, tl:Object.fromEntries(Object.entries(S.tracks).map(([k, v]) => [k, {h:v.h, name:v.name}]))});
 function commit(before, label){
   if (before === snap()) return false;
   UNDO.push({s:before, label:label || 'Editar'}); if (UNDO.length > 300) UNDO.shift();
@@ -234,6 +278,7 @@ function commit(before, label){
 function edit(fn, label){ const b = snap(); const r = fn(); cleanLinks(); commit(b, label); refresh(true); return r; }
 function restore(s){
   const d = JSON.parse(s);
+  if (d.s && d.s !== S.curSeq){ const o = S.seqs.find(x => x.id === d.s); if (o){ pause(); storeSeq(); activateSeq(o); renderSeqTabs(); renderProject(); setMonZoom(S.monZoom); } }
   S.clips = d.c.map(normalizeClip); S.markers = d.m || []; S.seqIn = d.i ?? null; S.seqOut = d.o ?? null;
   if (d.tl){
     const same = Object.keys(d.tl).sort().join() === Object.keys(S.tracks).sort().join();
@@ -339,7 +384,8 @@ function syncName(){
   $('#projTab').textContent = n; document.title = n + ' · AuthenCut Pro';
 }
 function serialize(){
-  return {app:'AuthenCut', v:2, name:$('#projName').value, seq:S.seq, zoom:S.zoom, tracks:S.tracks, master:S.master,
+  storeSeq();
+  return {app:'AuthenCut', v:3, seqs:S.seqs, curSeq:S.curSeq, openSeqs:S.openSeqs, name:$('#projName').value, seq:S.seq, zoom:S.zoom, tracks:S.tracks, master:S.master,
     markers:S.markers, seqIn:S.seqIn, seqOut:S.seqOut,
     media: S.media.map(m => ({id:m.id, name:m.name, type:m.type, duration:m.duration, w:m.w, h:m.h, thumb:m.thumb})), clips:S.clips};
 }
@@ -351,14 +397,21 @@ function load(d){
   S.seqIn = d.seqIn ?? null; S.seqOut = d.seqOut ?? null;
   S.sel.clear(); S.selTrans = null; S.gap = null; S.t = 0; S.projSel = null; S.primary = null; S.clipboard = null; TRASH.clear();
   if (typeof ivSel !== 'undefined') ivSel.clear();
-  S.tracks = d.tracks ? {} : freshTracks();
-  if (d.tracks) for (const k in d.tracks) if (/^[VA]\d+$/.test(k)) S.tracks[k] = Object.assign(TRACK_DEF(), d.tracks[k]);
-  for (const k of ['V1', 'A1', ...S.clips.map(c => c.track)]) if (!S.tracks[k]) S.tracks[k] = TRACK_DEF();
+  S.tracks = normTracks(d.tracks, S.clips);
   layoutTracks();
   S.master = Object.assign({vol:1}, d.master || {});
   $('#projName').value = d.name || 'Proyecto sin título'; syncName();
   S.seq = d.seq || {w:1920, h:1080};
   S.zoom = d.zoom || 40;
+  if (Array.isArray(d.seqs) && d.seqs.length){
+    S.seqs = d.seqs.map(o => { const clips = (o.clips || []).map(normalizeClip); return Object.assign(makeSeqObj(o.name, o.w || 1920, o.h || 1080), o, {clips, tracks:normTracks(o.tracks, clips), markers:o.markers || []}); });
+    S.openSeqs = (d.openSeqs || []).filter(id => S.seqs.some(s => s.id === id));
+    activateSeq(S.seqs.find(s => s.id === d.curSeq) || S.seqs[0]); S.t = 0;
+  } else {
+    S.seqs = [Object.assign(makeSeqObj('Secuencia 01', S.seq.w, S.seq.h), {tracks:S.tracks, clips:S.clips})];
+    S.curSeq = S.seqs[0].id; S.openSeqs = [S.curSeq]; storeSeq();
+  }
+  renderSeqTabs();
   UNDO.length = 0; REDO.length = 0; closeSource();
   buildTracks(); buildMixer(); renderProject(); refresh(true); setZoom(S.zoom);
   const off = S.media.length;
