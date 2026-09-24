@@ -371,3 +371,9 @@ body.t-trackfwd #tracks,body.t-trackfwd #tracks .clip,body.t-trackfwd #tracks .c
 #toast.show{opacity:1;transform:translateX(-50%)}
 #mediaHold{position:fixed;left:-10px;top:-10px;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none}
 ::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#3b3b3b;border-radius:5px;border:2px solid #1b1b1b}::-webkit-scrollbar-track{background:#1b1b1b}::-webkit-scrollbar-corner{background:#1b1b1b}
+
+/* máscaras, plantillas */
+#movl{position:absolute;display:none;border:1.5px dashed #f0c64a;box-shadow:0 0 0 1px rgba(0,0,0,.4);cursor:move;z-index:4}
+#movl i.br{background:#f0c64a;border-color:#6b5310}
+.fxitem .ic.g{background:#b0457e}
+.mkinv{display:flex!important;align-items:center;gap:4px;flex:none!important;margin-left:8px}

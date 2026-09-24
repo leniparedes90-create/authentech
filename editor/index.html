@@ -37,6 +37,7 @@
           <div class="tab on" data-tab="source">Origen:&nbsp;<span id="srcName">(sin clip)</span></div>
           <div class="tab" data-tab="fx">Controles de efectos</div>
           <div class="tab" data-tab="mixer">Mezclador de pistas de audio</div>
+          <div class="tab" data-tab="scopes">Visores Lumetri</div>
         </div>
         <div class="pbody" data-body="source">
           <div class="mview"><video id="srcVideo" playsinline></video><img id="srcImg" class="hidden" alt=""><div class="ph" id="srcPh">Haz doble clic en un medio del proyecto<br>para abrirlo en el Monitor de origen</div></div>
@@ -60,12 +61,13 @@
         </div>
         <div class="pbody hidden" data-body="fx"><div id="fxBody"></div></div>
         <div class="pbody hidden" data-body="mixer"><div id="mixer"></div></div>
+        <div class="pbody hidden" data-body="scopes"><div class="ptools"><select class="mini" id="scopeMode"><option value="luma">Forma de onda (luma)</option><option value="rgb">Desfile RGB</option><option value="vector">Vectorscopio YUV</option></select></div><canvas id="scopeCv" style="flex:1;min-height:0;width:100%;display:block"></canvas></div>
       </div>
       <div class="split v" id="spTop"></div>
       <div class="panel" id="prgPanel">
         <div class="tabs"><div class="tab on">Programa:&nbsp;<span id="seqLabel">Secuencia 01</span></div></div>
         <div class="pbody">
-          <div class="mview" id="prgView"><canvas id="prg" width="1920" height="1080"></canvas><div id="ovl"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div></div>
+          <div class="mview" id="prgView"><canvas id="prg" width="1920" height="1080"></canvas><div id="ovl"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i><div id="movl"><i class="br"></i></div></div></div>
           <div class="mbar" id="prgBar"><div class="trk"></div><div class="rng hidden"></div><div class="hd"></div></div>
           <div class="mctl">
             <div class="tcd" id="prgTC" title="Haz clic para escribir un código de tiempo">00:00:00:00</div>

@@ -390,10 +390,17 @@ function fxSection(box, c, f){
     `<span class="fxsp"></span><button class="fxon${f.on ? ' on' : ''}" title="Activar o desactivar el efecto">fx</button><button class="fxdel" title="Borrar efecto">${ICON.trash}</button>`);
   s.querySelector('.fxon').onclick = () => edit(() => { f.on = !f.on; }, (f.on ? 'Desactivar ' : 'Activar ') + d.name);
   s.querySelector('.fxdel').onclick = () => removeEffect(c, f.id);
+  if (f.type === 'mask'){
+    const row = fxRow(`<span class="swsp"></span><label>Forma</label><span class="seg"><button data-sh="ellipse" class="${f.p.shape !== 'rect' ? 'on' : ''}">Elipse</button><button data-sh="rect" class="${f.p.shape === 'rect' ? 'on' : ''}">Rectángulo</button></span><label class="mkinv"><input type="checkbox"${f.p.invert ? ' checked' : ''}> Invertida</label>`, '');
+    row.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => edit(() => { f.p.shape = b.dataset.sh; }, 'Forma de la máscara'));
+    row.querySelector('.mkinv input').onchange = e => edit(() => { f.p.invert = e.target.checked; }, 'Invertir máscara');
+    s.querySelector('.fxrows').prepend(row);
+  }
 }
 
 /* ============================== panel de efectos ============================== */
 const FX_TREE = [
+  {name:'Plantillas de gráficos', items:Object.entries(GFX_TEMPLATES).map(([k, t]) => ['g:' + k, t.name])},
   {name:'Efectos de audio', items:[['e:amp','Amplificar']]},
   {name:'Transiciones de audio', sub:[{name:'Fundido cruzado', items:[['t:power','Potencia constante'],['t:gain','Ganancia constante'],['t:expo','Fundido exponencial']]}]},
   {name:'Efectos de vídeo', sub:[
@@ -402,14 +409,15 @@ const FX_TREE = [
     {name:'Corrección de color', items:[['e:lumetri','Color Lumetri'],['e:hue','Balance de color (HLS)']]},
     {name:'Desenfocar y enfocar', items:[['e:gauss','Desenfoque gaussiano']]},
     {name:'Estilizar', items:[['e:mosaic','Mosaico']]},
-    {name:'Transformar', items:[['e:crop','Recortar'],['e:hflip','Voltear horizontal'],['e:vflip','Voltear vertical']]}]},
+    {name:'Transformar', items:[['e:crop','Recortar'],['e:hflip','Voltear horizontal'],['e:vflip','Voltear vertical']]},
+    {name:'Transparencia', items:[['e:mask','Máscara de opacidad']]}]},
   {name:'Transiciones de vídeo', sub:[
     {name:'Barrido', items:[['t:wipe','Barrido']]},
     {name:'Deslizar', items:[['t:push','Empujar'],['t:slide','Deslizar']]},
     {name:'Disolver', items:[['t:dissolve','Disolución cruzada'],['t:dipBlack','Pasar a negro'],['t:dipWhite','Pasar a blanco']]},
     {name:'Iris', items:[['t:iris','Iris redondo']]}]}
 ];
-const fxOpen = new Set(['Transiciones de vídeo', 'Disolver', 'Efectos de vídeo']);
+const fxOpen = new Set(['Plantillas de gráficos', 'Transiciones de vídeo', 'Disolver', 'Efectos de vídeo']);
 function buildEffectsPanel(){
   const el = $('#fxLib'), qy = $('#fxSearch').value.trim().toLowerCase();
   el.innerHTML = '';
@@ -423,12 +431,12 @@ function buildEffectsPanel(){
     const fc = f.lastChild;
     subs.forEach(x => fc.appendChild(x));
     for (const [key, name] of items){
-      const isT = key.startsWith('t:'), id = key.slice(2), isA = isT ? id in ATRANS : !!(FXLIB[id] && FXLIB[id].audio);
+      const isT = key.startsWith('t:'), isG = key.startsWith('g:'), id = key.slice(2), isA = isT ? id in ATRANS : !!(FXLIB[id] && FXLIB[id].audio);
       const it = document.createElement('div');
       it.className = 'fxitem' + (key === 't:dissolve' || key === 't:power' ? ' def' : '');
       it.draggable = true;
-      it.title = isT ? 'Arrástrala a un extremo de un clip o haz doble clic para aplicarla al clip seleccionado' : 'Arrástralo a un clip o haz doble clic para aplicarlo a la selección';
-      it.innerHTML = `<span class="ic${isT ? '' : ' e'}${isA ? ' a' : ''}"></span>${esc(name)}`;
+      it.title = isG ? 'Arrástrala a una pista de vídeo o haz doble clic para añadirla en el cabezal' : isT ? 'Arrástrala a un extremo de un clip o haz doble clic para aplicarla al clip seleccionado' : 'Arrástralo a un clip o haz doble clic para aplicarlo a la selección';
+      it.innerHTML = `<span class="ic${isG ? ' g' : isT ? '' : ' e'}${isA ? ' a' : ''}"></span>${esc(name)}`;
       it.ondragstart = e => { DRAGFX = key; e.dataTransfer.setData('text/plain', name); e.dataTransfer.effectAllowed = 'copy'; };
       it.ondragend = () => { DRAGFX = null; inner.querySelectorAll('.drop-fx').forEach(n => n.classList.remove('drop-fx')); };
       it.ondblclick = () => applyFromLibrary(key);
@@ -440,6 +448,7 @@ function buildEffectsPanel(){
   if (!el.children.length) el.innerHTML = '<div class="fxempty">No hay resultados</div>';
 }
 function applyFromLibrary(key){
+  if (key.startsWith('g:')) return addTemplate(key.slice(2), S.t);
   const cs = [...S.sel].map(clip).filter(Boolean);
   if (!cs.length) return toast('Selecciona primero un clip en la línea de tiempo');
   const id = key.slice(2);
@@ -547,6 +556,28 @@ function updateOverlay(){
   OVL.style.top = (oy - vr.top + view.scrollTop + (b.cy - b.h / 2) * s) + 'px';
   OVL.style.width = b.w * s + 'px'; OVL.style.height = b.h * s + 'px';
   OVL.style.transform = `rotate(${b.rot}deg)`;
+  const mk = c.fx.find(f => f.on && f.type === 'mask'), mv = $('#movl');
+  if (mk && !$('#fxBody').closest('.hidden')){
+    const x = fv(c, mk, 'x', S.t), y = fv(c, mk, 'y', S.t), w = fv(c, mk, 'w', S.t), h = fv(c, mk, 'h', S.t);
+    mv.style.display = 'block'; mv.style.left = (50 + x - w / 2) + '%'; mv.style.top = (50 + y - h / 2) + '%';
+    mv.style.width = w + '%'; mv.style.height = h + '%'; mv.style.borderRadius = mk.p.shape === 'rect' ? '0' : '50%';
+    mv.dataset.fx = mk.id;
+  } else mv.style.display = 'none';
+}
+function startMaskDrag(e, corner){
+  const c = primaryClip(), m = c && c.fx.find(f => f.id === $('#movl').dataset.fx); if (!m) return;
+  const r = OVL.getBoundingClientRect(), W = OVL.offsetWidth || 1, H = OVL.offsetHeight || 1;
+  const k = key => 'fx.' + m.id + '.' + key, x0 = e.clientX, y0 = e.clientY, before = snap();
+  const v0 = {x:val(c, k('x'), S.t), y:val(c, k('y'), S.t), w:val(c, k('w'), S.t), h:val(c, k('h'), S.t)};
+  let moved = false;
+  const mv = ev => {
+    moved = true;
+    const dx = (ev.clientX - x0) / W * 100, dy = (ev.clientY - y0) / H * 100;
+    if (corner){ setVal(c, k('w'), clamp(v0.w + dx * 2, 1, 300)); setVal(c, k('h'), clamp(v0.h + dy * 2, 1, 300)); }
+    else { setVal(c, k('x'), clamp(v0.x + dx, -100, 100)); setVal(c, k('y'), clamp(v0.y + dy, -100, 100)); }
+  };
+  const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); if (moved){ commit(before, corner ? 'Tamaño de la máscara' : 'Posición de la máscara'); renderEffects(true); } };
+  window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);
 }
 function hitTest(e){
   const {s, ox, oy} = monitorGeom(), x = (e.clientX - ox) / s, y = (e.clientY - oy) / s;
@@ -580,6 +611,47 @@ function setMonZoom(v){
   else { view.classList.add('zoomed'); CV.style.width = S.seq.w * +v + 'px'; CV.style.height = S.seq.h * +v + 'px'; }
 }
 
+/* =============================== visores Lumetri =============================== */
+const SCS = document.createElement('canvas'); SCS.width = 160; SCS.height = 90;
+function drawScopes(){
+  const cv = $('#scopeCv'); if (!cv || cv.closest('.hidden')) return;
+  const w = cv.clientWidth, h = cv.clientHeight, dpr = devicePixelRatio || 1; if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)){ cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.globalCompositeOperation = 'source-over'; g.fillStyle = '#0c0c0c'; g.fillRect(0, 0, w, h);
+  const sg = SCS.getContext('2d', {willReadFrequently:true}); sg.drawImage(CV, 0, 0, SCS.width, SCS.height);
+  const d = sg.getImageData(0, 0, SCS.width, SCS.height).data, SW = SCS.width, SH = SCS.height;
+  const mode = $('#scopeMode').value, pad = 26, gw = w - pad - 8, gh = h - 16;
+  g.font = '9px Inter, sans-serif'; g.fillStyle = '#666'; g.strokeStyle = '#2a2a2a'; g.lineWidth = 1;
+  if (mode === 'vector'){
+    const R = Math.min(w, h) / 2 - 12, cx = w / 2, cy = h / 2;
+    g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.moveTo(cx - R, cy); g.lineTo(cx + R, cy); g.moveTo(cx, cy - R); g.lineTo(cx, cy + R); g.stroke();
+    g.strokeStyle = '#6b4a2a'; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + R * Math.cos(-2.15), cy + R * Math.sin(-2.15)); g.stroke();
+    [['R',  .439, -.368, '#c33'], ['G', -.291, -.439, '#3c3'], ['B', -.148, .439, '#36c'], ['Cy', -.439, .071, '#3cc'], ['Mg', .291, .439, '#c3c'], ['Yl', .148, -.439, '#cc3']].forEach(([l, v, u, col]) => {
+      const x = cx + u * R * 2 * .9, y = cy - v * R * 2 * .9; g.strokeStyle = col; g.strokeRect(x - 4, y - 4, 8, 8); g.fillStyle = col; g.fillText(l, x + 6, y + 3);
+    });
+    g.globalCompositeOperation = 'lighter'; g.fillStyle = 'rgba(120,255,140,.25)';
+    for (let i = 0; i < d.length; i += 4){
+      const r = d[i] / 255, gg = d[i+1] / 255, b = d[i+2] / 255;
+      const u = -.147 * r - .289 * gg + .436 * b, v = .615 * r - .515 * gg - .1 * b;
+      g.fillRect(cx + u * R * 2 * .9, cy - v * R * 2 * .9, 1.2, 1.2);
+    }
+  } else {
+    for (const ire of [0, 25, 50, 75, 100]){ const y = 8 + gh - ire / 100 * gh; g.beginPath(); g.moveTo(pad, y + .5); g.lineTo(w - 8, y + .5); g.stroke(); g.fillText(String(ire), 4, y + 3); }
+    g.globalCompositeOperation = 'lighter';
+    const parade = mode === 'rgb', cols = parade ? [['rgba(255,70,70,.22)', 0], ['rgba(70,255,90,.22)', 1], ['rgba(80,130,255,.26)', 2]] : [['rgba(140,255,150,.2)', -1]];
+    cols.forEach(([col, ch], n) => {
+      g.fillStyle = col;
+      const x0 = pad + (parade ? n * gw / 3 : 0), ww = parade ? gw / 3 - 4 : gw;
+      for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++){
+        const i = (y * SW + x) * 4, v = ch < 0 ? (.2126 * d[i] + .7152 * d[i+1] + .0722 * d[i+2]) : d[i + ch];
+        g.fillRect(x0 + x / SW * ww, 8 + gh - v / 255 * gh, 1.4, 1.2);
+      }
+    });
+  }
+  g.globalCompositeOperation = 'source-over';
+}
+
 /* ================================ refresco por fotograma ================================ */
 let TICK = 0;
 function tickPanels(){
@@ -589,6 +661,7 @@ function tickPanels(){
   if (!$('#mixer').closest('.hidden')) tickMixer();
   const fx = $('#fxBody');
   if (!fx.closest('.hidden')){ if (!ACTIVE_SCRUB) refreshScrubs(); positionFxPh(); if (S.selTrans) tickTransPreview(); }
+  if (TICK % 4 === 0) drawScopes();
   if (TICK % 10 === 0){ const ib = $('#infoBox'); if (!ib.closest('.hidden')) renderInfo(); }
   if (S.mode === 'export') tickExportView();
 }
@@ -616,6 +689,7 @@ function initPanels(){
   fb.addEventListener('dragover', e => { if (DRAGFX){ e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
   fb.addEventListener('drop', e => {
     if (!DRAGFX) return; e.preventDefault(); const key = DRAGFX; DRAGFX = null;
+    if (key.startsWith('g:')) return addTemplate(key.slice(2), S.t);
     const c = primaryClip(); if (!c) return toast('Selecciona primero un clip');
     if (key.startsWith('t:')) applyTransition(c, 'in', key.slice(2)); else applyEffect(c, key.slice(2));
   });
@@ -630,6 +704,11 @@ function initPanels(){
     S.primary = c.id; S.selTrans = null; S.gap = null; renderTimeline(); renderEffects(true);
     e.preventDefault(); startOverlayDrag(e, c, false);
   });
+  $('#movl').addEventListener('mousedown', e => {
+    if (e.button !== 0) return; e.preventDefault(); e.stopPropagation(); FOCUS = 'program'; focusUI();
+    startMaskDrag(e, e.target.tagName === 'I');
+  });
+  $('#scopeMode').onchange = () => drawScopes(true);
   OVL.addEventListener('mousedown', e => {
     if (e.button !== 0) return; e.preventDefault(); e.stopPropagation(); FOCUS = 'program'; focusUI();
     const c = primaryClip(); if (c) startOverlayDrag(e, c, e.target.tagName === 'I');

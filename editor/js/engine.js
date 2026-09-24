@@ -110,7 +110,7 @@ function sync(){
 
 /* ================================== render ================================== */
 const CV = $('#prg'); let PG = CV.getContext('2d');
-const OFF = document.createElement('canvas');
+const OFF = document.createElement('canvas'), MK = document.createElement('canvas'), MM = document.createElement('canvas');
 function resizeCanvas(){
   const r = EXPORT ? 1 : S.res, w = Math.round(S.seq.w / r), h = Math.round(S.seq.h / r);
   if (CV.width !== w || CV.height !== h){ CV.width = w; CV.height = h; PG = CV.getContext('2d'); }
@@ -183,32 +183,62 @@ function drawClip(g, c, t, o = {}){
   const se = fxOn(c, 'sepia'); if (se) f.push(`sepia(${fv(c, se, 'amount', t)}%)`);
   const inv = fxOn(c, 'invert'); if (inv) f.push(`invert(${100 - fv(c, inv, 'mix', t)}%)`);
   const ga = fxOn(c, 'gauss'); if (ga){ const a = fv(c, ga, 'amount', t); if (a > 0) f.push(`blur(${(a * .5 * sc).toFixed(2)}px)`); }
-  g.filter = f.length ? f.join(' ') : 'none';
+  const filt = f.length ? f.join(' ') : 'none';
+  g.filter = filt;
   const cr = fxOn(c, 'crop'); let L = 0, T = 0, R = 0, B = 0;
   if (cr){ L = fv(c, cr, 'l', t) / 100; T = fv(c, cr, 't', t) / 100; R = fv(c, cr, 'r', t) / 100; B = fv(c, cr, 'b', t) / 100; }
   const sx = sw * L, sy = sh * T, sW = sw * (1 - L - R), sH = sh * (1 - T - B);
   if (sW > 1 && sH > 1){
     const x0 = -sw*fit/2 + sx*fit, y0 = -sh*fit/2 + sy*fit, dw = sW*fit, dh = sH*fit;
-    const mo = fxOn(c, 'mosaic');
-    if (mo){
-      const bw = Math.max(1, Math.round(fv(c, mo, 'blocks', t))), bh = Math.max(1, Math.round(bw * sH / sW));
-      OFF.width = bw; OFF.height = bh; OFF.getContext('2d').drawImage(el, sx, sy, sW, sH, 0, 0, bw, bh);
-      g.imageSmoothingEnabled = false; g.drawImage(OFF, x0, y0, dw, dh); g.imageSmoothingEnabled = true;
-    } else g.drawImage(el, sx, sy, sW, sH, x0, y0, dw, dh);
-    if (lu){
-      g.filter = 'none';
-      const temp = fv(c, lu, 'temp', t), vig = fv(c, lu, 'vig', t);
-      if (temp){
-        g.globalCompositeOperation = 'soft-light';
-        g.fillStyle = temp > 0 ? `rgba(255,150,40,${Math.abs(temp) / 100 * .7})` : `rgba(40,130,255,${Math.abs(temp) / 100 * .7})`;
-        g.fillRect(x0, y0, dw, dh); g.globalCompositeOperation = 'source-over';
+    const paint = (ctx, X, Y) => {
+      const mo = fxOn(c, 'mosaic');
+      if (mo){
+        const bw = Math.max(1, Math.round(fv(c, mo, 'blocks', t))), bh = Math.max(1, Math.round(bw * sH / sW));
+        OFF.width = bw; OFF.height = bh; OFF.getContext('2d').drawImage(el, sx, sy, sW, sH, 0, 0, bw, bh);
+        ctx.imageSmoothingEnabled = false; ctx.drawImage(OFF, X, Y, dw, dh); ctx.imageSmoothingEnabled = true;
+      } else ctx.drawImage(el, sx, sy, sW, sH, X, Y, dw, dh);
+      if (lu){
+        ctx.filter = 'none';
+        const temp = fv(c, lu, 'temp', t), vig = fv(c, lu, 'vig', t);
+        if (temp){
+          ctx.globalCompositeOperation = 'soft-light';
+          ctx.fillStyle = temp > 0 ? `rgba(255,150,40,${Math.abs(temp) / 100 * .7})` : `rgba(40,130,255,${Math.abs(temp) / 100 * .7})`;
+          ctx.fillRect(X, Y, dw, dh); ctx.globalCompositeOperation = 'source-over';
+        }
+        if (vig > 0){
+          const cx = X + dw/2, cy = Y + dh/2, r1 = Math.hypot(dw, dh) / 2;
+          const gr = ctx.createRadialGradient(cx, cy, r1 * (.75 - vig / 100 * .45), cx, cy, r1);
+          gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, `rgba(0,0,0,${Math.min(1, vig / 100 * 1.1)})`);
+          ctx.fillStyle = gr; ctx.fillRect(X, Y, dw, dh);
+        }
       }
-      if (vig > 0){
-        const cx = x0 + dw/2, cy = y0 + dh/2, r1 = Math.hypot(dw, dh) / 2;
-        const gr = g.createRadialGradient(cx, cy, r1 * (.75 - vig / 100 * .45), cx, cy, r1);
-        gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, `rgba(0,0,0,${Math.min(1, vig / 100 * 1.1)})`);
-        g.fillStyle = gr; g.fillRect(x0, y0, dw, dh);
-      }
+    };
+    const masks = c.fx.filter(m => m.on && m.type === 'mask');
+    if (!masks.length) paint(g, x0, y0);
+    else {
+      // Máscaras de opacidad: se pinta el clip en un lienzo aparte y se recorta con la unión de las máscaras
+      const pr = Math.max(.02, Math.min(sc, 4096 / Math.max(dw, dh)));
+      const mw = Math.max(1, Math.ceil(dw * pr)), mh = Math.max(1, Math.ceil(dh * pr));
+      if (MK.width !== mw || MK.height !== mh){ MK.width = mw; MK.height = mh; } else MK.getContext('2d').clearRect(0, 0, mw, mh);
+      if (MM.width !== mw || MM.height !== mh){ MM.width = mw; MM.height = mh; } else MM.getContext('2d').clearRect(0, 0, mw, mh);
+      const mg = MK.getContext('2d'); mg.setTransform(pr, 0, 0, pr, 0, 0); mg.filter = filt; paint(mg, 0, 0); mg.filter = 'none';
+      const kg = MM.getContext('2d'); kg.setTransform(pr, 0, 0, pr, 0, 0); kg.globalCompositeOperation = 'source-over';
+      const shape = (m, fill) => {
+        const cx = dw/2 + fv(c, m, 'x', t) / 100 * dw, cy = dh/2 + fv(c, m, 'y', t) / 100 * dh;
+        const rx = Math.max(.5, fv(c, m, 'w', t) / 200 * dw), ry = Math.max(.5, fv(c, m, 'h', t) / 200 * dh);
+        const fe = fv(c, m, 'feather', t);
+        kg.filter = fe > 0 ? `blur(${(fe * pr / 2).toFixed(2)}px)` : 'none';
+        kg.fillStyle = `rgba(0,0,0,${clamp(fv(c, m, 'op', t) / 100, 0, 1)})`;
+        kg.beginPath();
+        if (m.p.shape === 'rect') kg.rect(cx - rx, cy - ry, rx * 2, ry * 2); else kg.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        kg.fill();
+      };
+      const pos = masks.filter(m => !m.p.invert), neg = masks.filter(m => m.p.invert);
+      if (!pos.length){ kg.filter = 'none'; kg.fillStyle = '#000'; kg.fillRect(0, 0, dw, dh); }
+      pos.forEach(m => shape(m));
+      kg.globalCompositeOperation = 'destination-out'; neg.forEach(m => shape(m)); kg.globalCompositeOperation = 'source-over'; kg.filter = 'none';
+      mg.setTransform(1, 0, 0, 1, 0, 0); mg.globalCompositeOperation = 'destination-in'; mg.drawImage(MM, 0, 0); mg.globalCompositeOperation = 'source-over';
+      g.filter = 'none'; g.drawImage(MK, x0, y0, dw, dh);
     }
   }
   g.restore();

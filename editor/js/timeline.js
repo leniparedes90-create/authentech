@@ -394,6 +394,7 @@ async function onDrop(e){
   inner.querySelectorAll('.drop-fx').forEach(n => n.classList.remove('drop-fx'));
   if (DRAGFX){
     const key = DRAGFX; DRAGFX = null;
+    if (key.startsWith('g:')){ const {row, t} = posFrom(e), tr = TRACKS[row]; return addTemplate(key.slice(2), Math.max(0, q(snapTime(t, new Set()).t)), tr && isV(tr.id) && !S.tracks[tr.id].lock ? tr.id : null); }
     const el = document.elementFromPoint(e.clientX, e.clientY), cEl = el && el.closest('.clip');
     const c = cEl && clip(cEl.dataset.id); if (!c) return toast('Suelta el efecto sobre un clip');
     if (key.startsWith('t:')){ const r = cEl.getBoundingClientRect(); applyTransition(c, e.clientX - r.left < r.width / 2 ? 'in' : 'out', key.slice(2)); }
@@ -428,6 +429,8 @@ function onTracksCtx(e){
     ['Habilitar', 'Mayús+E', toggleEnable, false, !c.disabled],
     [linked ? 'Desvincular' : 'Vincular', 'Ctrl+L', toggleLink, !linked && S.sel.size < 2], '-',
     ['Velocidad/duración…', 'Ctrl+R', speedDialog],
+    ['Ajustar al tamaño del fotograma', '', () => scaleToFrame(false), !(c.kind === 'video' || c.kind === 'image')],
+    ['Rellenar el fotograma', '', () => scaleToFrame(true), !(c.kind === 'video' || c.kind === 'image')],
     ['Aplicar transición predeterminada', 'Ctrl+D', () => applyDefaultTransitions(c.kind === 'audio' ? 'a' : 'v')], '-',
     ['Mostrar en el proyecto', '', () => { S.projSel = c.mediaId; setBotTab('project'); renderProject(); }, !c.mediaId],
     ['Abrir en el Monitor de origen', '', () => openSource(c.mediaId, c), !c.mediaId], '-',

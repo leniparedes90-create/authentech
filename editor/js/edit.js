@@ -198,12 +198,13 @@ const FXLIB = {
   crop: {name:'Recortar', params:[['Izquierda','l',0,100,.1,' %',0],['Superior','t',0,100,.1,' %',0],['Derecha','r',0,100,.1,' %',0],['Inferior','b',0,100,.1,' %',0]]},
   hflip: {name:'Voltear horizontal', params:[]},
   vflip: {name:'Voltear vertical', params:[]},
-  amp: {name:'Amplificar', audio:true, params:[['Ganancia','db',-24,24,.1,' dB',0]]}
+  amp: {name:'Amplificar', audio:true, params:[['Ganancia','db',-24,24,.1,' dB',0]]},
+  mask: {name:'Máscara de opacidad', opts:{shape:'ellipse', invert:false}, params:[['Centro X','x',-100,100,.1,' %',0],['Centro Y','y',-100,100,.1,' %',0],['Ancho','w',1,300,.1,' %',60],['Alto','h',1,300,.1,' %',60],['Desvanecimiento','feather',0,600,1,' px',40],['Opacidad de la máscara','op',0,100,.5,' %',100]]}
 };
 function applyEffect(c, type){
   const d = FXLIB[type]; if (!d || !c) return;
   if (!!d.audio !== (c.kind === 'audio')) return toast(d.audio ? 'Este efecto se aplica a clips de audio' : 'Este efecto se aplica a clips de vídeo, imágenes o títulos');
-  edit(() => { const p = {}; d.params.forEach(r => p[r[1]] = r[6]); c.fx.push({id:nid('f'), type, on:true, p}); }, 'Aplicar ' + d.name);
+  edit(() => { const p = {...(d.opts || {})}; d.params.forEach(r => p[r[1]] = r[6]); c.fx.push({id:nid('f'), type, on:true, p}); }, 'Aplicar ' + d.name);
   S.sel = new Set([c.id]); S.primary = c.id; S.selTrans = null;
   setTab('fx'); renderTimeline(); renderEffects(true);
   status(`${d.name} aplicado`);
@@ -377,4 +378,46 @@ function setSeq(w, h){ S.seq = {w, h}; draw(); setMonZoom(S.monZoom); renderTime
 function seqSettings(){
   modal('Ajustes de secuencia', `<label>Tamaño del fotograma<select id="seqP">${SEQ_PRESETS.map(([w, h, l]) => `<option value="${w}x${h}"${S.seq.w === w && S.seq.h === h ? ' selected' : ''}>${l}</option>`).join('')}</select></label><div class="dim">Base de tiempo: ${FPS} fotogramas/segundo · Audio: 48 000 Hz estéreo</div>`,
     [['Cancelar'], ['Aceptar', m => { const [w, h] = m.querySelector('#seqP').value.split('x').map(Number); setSeq(w, h); toast(`Secuencia: ${w}×${h}`); }, true]]);
+}
+
+/* ============================ plantillas de gráficos ============================ */
+const GFX_TEMPLATES = {
+  title: {name:'Título principal', props:{text:'TÍTULO PRINCIPAL', font:'Bebas Neue', size:190, bold:false, shadow:true}},
+  lower: {name:'Tercio inferior', props:{text:'Nombre Apellido\nCargo o descripción', font:'Montserrat', size:58, bold:true, align:'left', bg:true, bgColor:'#16325f', shadow:false, x:-520, y:360}},
+  sub: {name:'Subtítulo', props:{text:'Escribe aquí el subtítulo', font:'Inter', size:54, bold:false, bg:true, bgColor:'#000000', shadow:false, y:430}},
+  quote: {name:'Cita destacada', props:{text:'«Una frase que\nmerece destacarse»', font:'Playfair Display', size:96, bold:false, italic:true, shadow:true}},
+  end: {name:'Créditos finales', props:{text:'Gracias por ver\n\nEditado con AuthenCut Pro', font:'Montserrat', size:72, bold:true, shadow:true}},
+  cta: {name:'Llamada a la acción', props:{text:'¡SUSCRÍBETE!', font:'Montserrat', size:110, bold:true, bg:true, bgColor:'#d62839', stroke:0, shadow:true}}
+};
+function addTemplate(key, at, track){
+  const tp = GFX_TEMPLATES[key]; if (!tp) return;
+  const c = addTitle(at, track);
+  if (!c) return;
+  const k = clip(c.id);
+  edit(() => {
+    Object.assign(k.props, tp.props);
+    const scale = Math.min(1, S.seq.w / 1920);
+    if (scale < 1){ k.props.size = Math.round(k.props.size * scale); k.props.x = Math.round((k.props.x || 0) * scale); k.props.y = Math.round((k.props.y || 0) * scale); }
+    k.tIn = {type:'dissolve', dur:q(.5)}; k.tOut = {type:'dissolve', dur:q(.5)};
+  }, 'Plantilla: ' + tp.name);
+  status('Plantilla añadida: ' + tp.name);
+}
+
+/* ============================ escala y desplazamiento ============================ */
+function frameScale(c, fill){
+  const m = media(c.mediaId); if (!m || !m.w || !m.h) return 100;
+  const fit = Math.min(S.seq.w / m.w, S.seq.h / m.h), cover = Math.max(S.seq.w / m.w, S.seq.h / m.h);
+  return fill ? Math.round(cover / fit * 1000) / 10 : 100;
+}
+function scaleToFrame(fill){
+  const cs = [...S.sel].map(clip).filter(c => c && (c.kind === 'video' || c.kind === 'image'));
+  if (!cs.length) return toast('Selecciona un clip de vídeo o imagen');
+  edit(() => cs.forEach(c => { setVal(c, 'scale', frameScale(c, fill)); if (!fill){ setVal(c, 'x', 0); setVal(c, 'y', 0); } }), fill ? 'Rellenar el fotograma' : 'Ajustar al fotograma');
+}
+function nudge(n){
+  const cs = [...S.sel].map(clip).filter(c => c && !S.tracks[c.track].lock);
+  if (!cs.length) return;
+  const d = n / FPS, minS = Math.min(...cs.map(c => c.start));
+  if (minS + d < 0) return;
+  edit(() => { cs.forEach(c => c.start = q(c.start + d)); overwrite(cs.map(c => c.id)); }, 'Desplazar clip');
 }

@@ -5,7 +5,7 @@
 const WORKSPACES = {
   'Edición':    {top:54, lc:50, pc:28, src:'source', bot:'project'},
   'Ensamblaje': {top:62, lc:40, pc:46, src:'source', bot:'project'},
-  'Color':      {top:60, lc:36, pc:24, src:'fx',     bot:'effects'},
+  'Color':      {top:60, lc:36, pc:24, src:'scopes', bot:'effects'},
   'Efectos':    {top:56, lc:44, pc:28, src:'fx',     bot:'effects'},
   'Audio':      {top:52, lc:50, pc:28, src:'mixer',  bot:'project'},
   'Gráficos':   {top:56, lc:44, pc:24, src:'fx',     bot:'project', tool:'text'}
@@ -52,7 +52,8 @@ const MENUS = {
   'Clip': [
     ['Velocidad/duración…', 'Ctrl+R', speedDialog], '-',
     ['Insertar', ',', () => insertFromSource(false)], ['Sobrescribir', '.', () => insertFromSource(true)], '-',
-    ['Habilitar / Deshabilitar', 'Mayús+E', toggleEnable], ['Vincular / Desvincular', 'Ctrl+L', toggleLink]],
+    ['Habilitar / Deshabilitar', 'Mayús+E', toggleEnable], ['Vincular / Desvincular', 'Ctrl+L', toggleLink], '-',
+    ['Ajustar al tamaño del fotograma', '', () => scaleToFrame(false)], ['Rellenar el fotograma', '', () => scaleToFrame(true)]],
   'Secuencia': [
     ['Ajustes de secuencia…', '', seqSettings], '-',
     ['Añadir edición', 'Ctrl+K', () => splitAtPlayhead(false)], ['Añadir edición a todas las pistas', 'Ctrl+Mayús+K', () => splitAtPlayhead(true)],
@@ -65,14 +66,15 @@ const MENUS = {
     ['Marcar entrada', 'I', markSeqIn], ['Marcar salida', 'O', markSeqOut], ['Ir a entrada', 'Mayús+I', goSeqIn], ['Ir a salida', 'Mayús+O', goSeqOut], ['Borrar entrada y salida', 'Ctrl+Mayús+X', clearSeqIO], '-',
     ['Añadir marcador', 'M', () => addMarker()], ['Ir al siguiente marcador', 'Mayús+M', () => jumpMarker(1)], ['Ir al marcador anterior', 'Ctrl+Mayús+M', () => jumpMarker(-1)],
     ['Editar marcador…', '', editMarkerAtPlayhead], ['Borrar todos los marcadores', '', clearMarkers]],
-  'Gráficos y títulos': [['Nueva capa: Texto', 'Ctrl+T', () => addTitle()], ['Herramienta Texto', 'T', () => setTool('text')]],
+  'Gráficos y títulos': [['Nueva capa: Texto', 'Ctrl+T', () => addTitle()], ['Herramienta Texto', 'T', () => setTool('text')], '-',
+    {grp:'Plantillas'}, ...Object.entries(GFX_TEMPLATES).map(([k, t]) => [t.name, '', () => addTemplate(k, S.t)])],
   'Ver': [
     {grp:'Resolución de reproducción'}, ['Completa', '', () => setRes(1)], ['1/2', '', () => setRes(2)], ['1/4', '', () => setRes(4)], '-',
     {grp:'Zoom del monitor de programa'}, ['Ajustar', '', () => setMonZoomUI('fit')], ['50 %', '', () => setMonZoomUI('0.5')], ['100 %', '', () => setMonZoomUI('1')]],
   'Ventana': [
     {grp:'Espacios de trabajo'}, ...Object.keys(WORKSPACES).map(n => [n, '', () => setWorkspace(n)]), '-',
     ['Proyecto', 'Mayús+1', () => setBotTab('project')], ['Monitor de origen', 'Mayús+2', () => setTab('source')], ['Controles de efectos', 'Mayús+5', () => setTab('fx')],
-    ['Mezclador de pistas de audio', 'Mayús+6', () => setTab('mixer')], ['Efectos', 'Mayús+7', () => setBotTab('effects')],
+    ['Mezclador de pistas de audio', 'Mayús+6', () => setTab('mixer')], ['Visores Lumetri', '', () => setTab('scopes')], ['Efectos', 'Mayús+7', () => setBotTab('effects')],
     ['Marcadores', '', () => setBotTab('markers')], ['Historial', '', () => setBotTab('history')], ['Información', '', () => setBotTab('info')]],
   'Ayuda': [['Métodos abreviados de teclado', 'F1', showShortcuts], ['Acerca de AuthenCut Pro', '', about]]
 };
@@ -254,7 +256,7 @@ function showShortcuts(){
   const G = [
     ['Reproducción', [['Espacio','Reproducir / Detener'],['J / K / L','Retroceder / Detener / Avanzar (pulsa varias veces para más velocidad)'],['← / →','Fotograma anterior / siguiente (Mayús: 5 fotogramas)'],['↑ / ↓','Punto de edición anterior / siguiente'],['Inicio / Fin','Ir al inicio / al final']]],
     ['Herramientas', [['V','Selección'],['A','Seleccionar pista hacia delante'],['B','Edición de ondulación'],['N','Edición de rodillo'],['R','Ajuste de velocidad'],['C','Cuchilla (Mayús+clic: todas las pistas)'],['Y','Desplazar'],['H','Mano'],['Z','Zoom (Alt+clic: alejar)'],['T','Texto']]],
-    ['Edición', [['Ctrl+K','Añadir edición (Ctrl+Mayús+K: todas las pistas)'],['Q / W','Recortar con ondulación la edición anterior / siguiente'],['Supr','Borrar'],['Mayús+Supr','Eliminar con ondulación'],['Alt+arrastrar','Mover o recortar sin el clip vinculado'],['Ctrl+arrastrar','Insertar al soltar un medio'],['Ctrl+C / X / V','Copiar / Cortar / Pegar (Ctrl+Mayús+V: pegar inserción)'],['Ctrl+Z / Ctrl+Mayús+Z','Deshacer / Rehacer'],['Ctrl+L','Vincular / Desvincular'],['Mayús+E','Habilitar / Deshabilitar clip'],['Ctrl+R','Velocidad/duración'],['Ctrl+D','Transición de vídeo (Ctrl+Mayús+D: audio; Mayús+D: ambas)']]],
+    ['Edición', [['Ctrl+K','Añadir edición (Ctrl+Mayús+K: todas las pistas)'],['Q / W','Recortar con ondulación la edición anterior / siguiente'],['Supr','Borrar'],['Mayús+Supr','Eliminar con ondulación'],['Alt+arrastrar','Mover o recortar sin el clip vinculado'],['Alt+← / →','Desplazar los clips seleccionados un fotograma (Mayús: 5)'],['Ctrl+arrastrar','Insertar al soltar un medio'],['Ctrl+C / X / V','Copiar / Cortar / Pegar (Ctrl+Mayús+V: pegar inserción)'],['Ctrl+Z / Ctrl+Mayús+Z','Deshacer / Rehacer'],['Ctrl+L','Vincular / Desvincular'],['Mayús+E','Habilitar / Deshabilitar clip'],['Ctrl+R','Velocidad/duración'],['Ctrl+D','Transición de vídeo (Ctrl+Mayús+D: audio; Mayús+D: ambas)']]],
     ['Marcas', [['I / O','Marcar entrada / salida'],['Mayús+I / Mayús+O','Ir a entrada / salida'],['Ctrl+Mayús+X','Borrar entrada y salida'],['; / \'','Levantar / Extraer'],[', / .','Insertar / Sobrescribir desde el origen'],['M','Añadir marcador (Mayús+M: siguiente)']]],
     ['Vista y archivo', [['= / - / \\','Acercar / Alejar / Ajustar la secuencia'],['Alt+rueda','Zoom en la línea de tiempo'],['S','Ajustar en la línea de tiempo'],['º (`)','Maximizar el panel activo'],['Mayús+1…7','Proyecto, Origen, Línea de tiempo, Programa, Controles de efectos, Mezclador, Efectos'],['Ctrl+I','Importar'],['Ctrl+T','Nuevo título'],['Ctrl+M','Exportar medios'],['Ctrl+Mayús+E','Exportar fotograma'],['Ctrl+S','Guardar proyecto']]]
   ];
@@ -335,8 +337,8 @@ function onKey(e){
     case 'd': if (sh) applyDefaultTransitions('both'); else return; break;
     case 'e': if (sh) toggleEnable(); else return; break;
     case 'Delete': case 'Backspace': if (FOCUS === 'fx' || FOCUS === 'panel') return; sh ? rippleDel() : del(); break;
-    case 'ArrowLeft': src ? srcStep(sh ? -5 : -1) : step(sh ? -5 : -1); break;
-    case 'ArrowRight': src ? srcStep(sh ? 5 : 1) : step(sh ? 5 : 1); break;
+    case 'ArrowLeft': if (alt){ nudge(sh ? -5 : -1); break; } src ? srcStep(sh ? -5 : -1) : step(sh ? -5 : -1); break;
+    case 'ArrowRight': if (alt){ nudge(sh ? 5 : 1); break; } src ? srcStep(sh ? 5 : 1) : step(sh ? 5 : 1); break;
     case 'ArrowUp': jumpEdit(-1); break;
     case 'ArrowDown': jumpEdit(1); break;
     case 'Home': pause(); seek(0); break;
