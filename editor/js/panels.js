@@ -71,7 +71,7 @@ function removeMedia(id){
   const m = media(id); if (!m) return;
   const used = S.clips.some(c => c.mediaId === id);
   if (used && !confirm(`"${m.name}" se usa en la secuencia. ¿Borrarlo y quitar sus clips?`)) return;
-  if (used) edit(() => { S.clips = S.clips.filter(c => c.mediaId !== id); }, 'Borrar medio');
+  if (used){ TRASH.set(m.id, m); edit(() => { S.clips = S.clips.filter(c => c.mediaId !== id); }, 'Borrar medio'); }
   S.media = S.media.filter(x => x !== m);
   if (S.src.id === id) closeSource();
   S.projSel = null; renderProject(); scheduleSave();
@@ -458,9 +458,7 @@ function applyFromLibrary(key){
     if (!c) return toast(isA ? 'Selecciona un clip de audio' : 'Selecciona un clip de vídeo');
     applyTransition(c, 'in', id);
   } else {
-    const d = FXLIB[id], targets = cs.filter(k => !!d.audio === (k.kind === 'audio'));
-    if (!targets.length) return toast(d.audio ? 'Selecciona un clip de audio' : 'Selecciona un clip de vídeo');
-    targets.forEach(c => applyEffect(c, id));
+    applyEffectMany(cs, id);
   }
 }
 
@@ -558,9 +556,14 @@ function updateOverlay(){
   OVL.style.transform = `rotate(${b.rot}deg)`;
   const mk = c.fx.find(f => f.on && f.type === 'mask'), mv = $('#movl');
   if (mk && !$('#fxBody').closest('.hidden')){
-    const x = fv(c, mk, 'x', S.t), y = fv(c, mk, 'y', S.t), w = fv(c, mk, 'w', S.t), h = fv(c, mk, 'h', S.t);
-    mv.style.display = 'block'; mv.style.left = (50 + x - w / 2) + '%'; mv.style.top = (50 + y - h / 2) + '%';
-    mv.style.width = w + '%'; mv.style.height = h + '%'; mv.style.borderRadius = mk.p.shape === 'rect' ? '0' : '50%';
+    // la máscara se dibuja sobre el área recortada y dentro del volteo del clip
+    const cr = fxOn(c, 'crop'), L = cr ? fv(c, cr, 'l', S.t) / 100 : 0, R = cr ? fv(c, cr, 'r', S.t) / 100 : 0, T = cr ? fv(c, cr, 't', S.t) / 100 : 0, B = cr ? fv(c, cr, 'b', S.t) / 100 : 0;
+    const fw = Math.max(.01, 1 - L - R), fh = Math.max(.01, 1 - T - B);
+    let x = fv(c, mk, 'x', S.t), y = fv(c, mk, 'y', S.t); const w = fv(c, mk, 'w', S.t) * fw, h = fv(c, mk, 'h', S.t) * fh;
+    let cx = (L + (.5 + x / 100) * fw) * 100, cy = (T + (.5 + y / 100) * fh) * 100;
+    if (fxOn(c, 'hflip')) cx = 100 - cx; if (fxOn(c, 'vflip')) cy = 100 - cy;
+    mv.style.display = 'block'; mv.style.left = (cx - w / 2) + '%'; mv.style.top = (cy - h / 2) + '%';
+    mv.style.width = w + '%'; mv.style.height = h + '%'; mv.dataset.fw = fw; mv.dataset.fh = fh; mv.dataset.hf = fxOn(c, 'hflip') ? -1 : 1; mv.dataset.vf = fxOn(c, 'vflip') ? -1 : 1; mv.style.borderRadius = mk.p.shape === 'rect' ? '0' : '50%';
     mv.dataset.fx = mk.id;
   } else mv.style.display = 'none';
 }
@@ -572,9 +575,9 @@ function startMaskDrag(e, corner){
   let moved = false;
   const mv = ev => {
     moved = true;
-    const dx = (ev.clientX - x0) / W * 100, dy = (ev.clientY - y0) / H * 100;
+    const ds = $('#movl').dataset, dx = (ev.clientX - x0) / W * 100 / +ds.fw, dy = (ev.clientY - y0) / H * 100 / +ds.fh;
     if (corner){ setVal(c, k('w'), clamp(v0.w + dx * 2, 1, 300)); setVal(c, k('h'), clamp(v0.h + dy * 2, 1, 300)); }
-    else { setVal(c, k('x'), clamp(v0.x + dx, -100, 100)); setVal(c, k('y'), clamp(v0.y + dy, -100, 100)); }
+    else { setVal(c, k('x'), clamp(v0.x + dx * +ds.hf, -100, 100)); setVal(c, k('y'), clamp(v0.y + dy * +ds.vf, -100, 100)); }
   };
   const up = () => { window.removeEventListener('mousemove', mv); window.removeEventListener('mouseup', up); if (moved){ commit(before, corner ? 'Tamaño de la máscara' : 'Posición de la máscara'); renderEffects(true); } };
   window.addEventListener('mousemove', mv); window.addEventListener('mouseup', up);

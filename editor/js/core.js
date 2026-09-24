@@ -77,6 +77,8 @@ function normalizeClip(c){
 function newClip(kind, m, track, start, inP, dur, link){
   return normalizeClip({id:nid(), kind, mediaId: m ? m.id : null, track, start:q(start), in:inP || 0, dur:q(dur), link:link || null});
 }
+function clampTrans(c){ if (c.tIn && c.tIn.dur > c.dur) c.tIn.dur = c.dur; if (c.tOut && c.tOut.dur > c.dur) c.tOut.dur = c.dur; }
+const TRASH = new Map(); // medios borrados, para poder deshacer
 function cloneClip(c){ const n = JSON.parse(JSON.stringify(c)); n.id = nid(); return n; }
 
 /* ------------------------------ fotogramas clave ------------------------------ */
@@ -213,6 +215,9 @@ function edit(fn, label){ const b = snap(); const r = fn(); cleanLinks(); commit
 function restore(s){
   const d = JSON.parse(s);
   S.clips = d.c.map(normalizeClip); S.markers = d.m || []; S.seqIn = d.i ?? null; S.seqOut = d.o ?? null;
+  let back = false;
+  for (const c of S.clips) if (c.mediaId && !media(c.mediaId) && TRASH.has(c.mediaId)){ S.media.push(TRASH.get(c.mediaId)); TRASH.delete(c.mediaId); back = true; }
+  if (back) renderProject();
   S.sel = new Set([...S.sel].filter(id => clip(id)));
   if (S.selTrans && !clip(S.selTrans.id)) S.selTrans = null;
   S.gap = null; refresh(true);
@@ -318,7 +323,8 @@ function load(d){
   S.media = (d.media || []).map(m => ({...m, offline:true, url:null}));
   S.clips = d.clips.map(normalizeClip); S.markers = d.markers || [];
   S.seqIn = d.seqIn ?? null; S.seqOut = d.seqOut ?? null;
-  S.sel.clear(); S.selTrans = null; S.gap = null; S.t = 0; S.projSel = null;
+  S.sel.clear(); S.selTrans = null; S.gap = null; S.t = 0; S.projSel = null; S.primary = null; S.clipboard = null; TRASH.clear();
+  if (typeof ivSel !== 'undefined') ivSel.clear();
   S.tracks = freshTracks(); if (d.tracks) for (const k in S.tracks) if (d.tracks[k]) Object.assign(S.tracks[k], d.tracks[k]);
   S.master = Object.assign({vol:1}, d.master || {});
   $('#projName').value = d.name || 'Proyecto sin título'; syncName();

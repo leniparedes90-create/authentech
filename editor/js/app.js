@@ -118,7 +118,7 @@ function setMode(mode){
   $('#main').classList.toggle('hidden', mode !== 'edit');
   $('#importView').classList.toggle('hidden', mode !== 'import');
   $('#exportView').classList.toggle('hidden', mode !== 'export');
-  if (mode === 'import') renderImportView();
+  if (mode === 'import'){ $('#ivName').value = $('#projName').value; $('#ivSeq').value = ''; renderImportView(); }
   else if (mode === 'export') openExportView();
   else { renderTimeline(); updateSrcUI(); }
 }
@@ -126,8 +126,9 @@ function setMode(mode){
 /* ------------------------------- vista Importar ------------------------------- */
 const ivSel = new Set();
 function renderImportView(){
-  if (document.activeElement !== $('#ivName')) $('#ivName').value = $('#projName').value;
-  $('#ivSeq').innerHTML = SEQ_PRESETS.map(([w, h, l]) => `<option value="${w}x${h}"${S.seq.w === w && S.seq.h === h ? ' selected' : ''}>${l}</option>`).join('');
+  const seqEl = $('#ivSeq'), keep = seqEl.value;
+  seqEl.innerHTML = SEQ_PRESETS.map(([w, h, l]) => `<option value="${w}x${h}"${S.seq.w === w && S.seq.h === h ? ' selected' : ''}>${l}</option>`).join('');
+  if (keep) seqEl.value = keep;
   const g = $('#ivGrid'); g.innerHTML = '';
   for (const m of S.media){
     const on = ivSel.has(m.id), d = document.createElement('div'); d.className = 'iv-item' + (on ? ' on' : '');
@@ -209,7 +210,8 @@ async function startExport(s){
   if (recDest) recDest.stream.getAudioTracks().forEach(t => stream.addTrack(t));
   let rec;
   try { rec = new MediaRecorder(stream, {mimeType:s.mime, videoBitsPerSecond:s.vbps, audioBitsPerSecond:s.abps}); }
-  catch(e){ EXPORT = null; return toast('No se pudo iniciar la exportación: ' + e.message); }
+  catch(e){ EXPORT = null; stream.getVideoTracks().forEach(t => t.stop()); return toast('No se pudo iniciar la exportación: ' + e.message); }
+  EXPORT.stream = stream;
   const chunks = [];
   rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
   const m = modal('Codificando', `<div>Exportando <b>${esc(s.name)}</b></div><div class="prog"><i></i></div><div class="dim" id="exEta">Preparando…</div><div class="dim">La exportación se procesa en tiempo real. No cambies de pestaña mientras dura.</div>`, [['Cancelar', () => { cancelExport(); return false; }]]);
@@ -232,7 +234,7 @@ function cancelExport(){
   const ex = EXPORT; if (!ex) return;
   ex.cancelled = true; pause();
   if (ex.rec && ex.rec.state !== 'inactive') ex.rec.stop();
-  else { EXPORT = null; if (ex.modal) ex.modal.remove(); toast('Exportación cancelada'); }
+  else { EXPORT = null; if (ex.stream) ex.stream.getVideoTracks().forEach(t => t.stop()); if (ex.modal) ex.modal.remove(); toast('Exportación cancelada'); }
 }
 function quickExport(){ openExportView(); startExport(exportSettings()); }
 function exportFrame(){
@@ -279,7 +281,8 @@ function splitter(el, axis, varName, container, min, max){
 
 /* ================================== teclado ================================== */
 function onKey(e){
-  if (e.target.closest && e.target.closest('input,textarea,select')) return;
+  if (e.target.closest && e.target.closest('input:not([type=range]):not([type=checkbox]),textarea,select')) return;
+  if (drag){ e.preventDefault(); return; }
   if (EXPORT){ if (e.key === 'Escape') cancelExport(); e.preventDefault(); return; }
   if ($('.modal')){ if (e.key === 'Escape') $('.modal').remove(); return; }
   if ($('#ctx') && e.key === 'Escape'){ closeCtx(); return; }

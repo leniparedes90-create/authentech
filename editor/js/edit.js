@@ -15,9 +15,9 @@ function overwrite(ids){
       else if (os < s && oe > e){
         const r = cloneClip(o); r.link = null;
         r.start = q(e); r.in = o.in + (e - os) * spd(o); r.dur = q(oe - e); shiftKf(r, -(e - os)); r.tIn = null;
-        o.dur = q(s - os); o.tOut = null; S.clips.push(r);
-      } else if (os < s){ o.dur = q(s - os); o.tOut = null; }
-      else { o.in += (e - os) * spd(o); shiftKf(o, -(e - os)); o.dur = q(oe - e); o.start = q(e); o.tIn = null; }
+        o.dur = q(s - os); o.tOut = null; clampTrans(o); clampTrans(r); S.clips.push(r);
+      } else if (os < s){ o.dur = q(s - os); o.tOut = null; clampTrans(o); }
+      else { o.in += (e - os) * spd(o); shiftKf(o, -(e - os)); o.dur = q(oe - e); o.start = q(e); o.tIn = null; clampTrans(o); }
     }
   }
 }
@@ -31,7 +31,7 @@ function splitClipAt(c, t, linked = true, map = null){
     const r = cloneClip(p), off = t - p.start;
     r.start = q(t); r.in = p.in + off * spd(p); r.dur = q(e - t); shiftKf(r, -off); r.tIn = null;
     r.link = !p.link ? null : map ? (map[p.link] || (map[p.link] = nid('l'))) : (linked && parts.length > 1 ? nl : null);
-    p.dur = q(off); p.tOut = null;
+    p.dur = q(off); p.tOut = null; clampTrans(p); clampTrans(r);
     S.clips.push(r); did = true;
   }
   return did;
@@ -64,10 +64,18 @@ function rippleDel(){
   if (S.gap && !S.sel.size) return rippleDeleteGap(S.gap);
   if (!S.sel.size) return;
   edit(() => {
-    const gone = S.clips.filter(c => S.sel.has(c.id) && !S.tracks[c.track].lock).sort((a, b) => b.start - a.start);
-    for (const g of gone){
-      S.clips = S.clips.filter(c => c !== g);
-      for (const c of S.clips) if (c.track === g.track && c.start >= cend(g) - 1e-6) c.start = q(c.start - g.dur);
+    const gone = S.clips.filter(c => S.sel.has(c.id) && !S.tracks[c.track].lock);
+    S.clips = S.clips.filter(c => !gone.includes(c));
+    // agrupa los rangos (un clip de vídeo y su audio vinculado cuentan una sola vez)
+    const ranges = [];
+    for (const g of gone){ const r = ranges.find(x => Math.abs(x.a - g.start) < 1e-6 && Math.abs(x.b - cend(g)) < 1e-6); if (r) r.tracks.add(g.track); else ranges.push({a:g.start, b:cend(g), tracks:new Set([g.track])}); }
+    ranges.sort((x, y) => y.a - x.a);
+    let warned = false;
+    for (const r of ranges){
+      const len = r.b - r.a;
+      const blocked = S.clips.some(c => !r.tracks.has(c.track) && !S.tracks[c.track].lock && c.start < r.b - 1e-6 && cend(c) > r.a + 1e-6);
+      if (blocked && !warned){ warned = true; toast('Hay clips en otras pistas en ese rango: solo se cierra el hueco en la pista del clip'); }
+      for (const c of S.clips) if (!S.tracks[c.track].lock && (!blocked || r.tracks.has(c.track)) && c.start >= r.b - 1e-6) c.start = q(c.start - len);
     }
     S.sel.clear();
   }, 'Eliminar con ondulación');
@@ -86,7 +94,8 @@ function gapAt(track, t){
 function rippleDeleteGap(g){
   const len = g.b - g.a;
   const blocked = S.clips.some(c => c.track !== g.track && !S.tracks[c.track].lock && c.start < g.b - 1e-6 && cend(c) > g.a + 1e-6);
-  edit(() => { for (const c of S.clips) if (!S.tracks[c.track].lock && (!blocked || c.track === g.track) && c.start >= g.b - 1e-6) c.start = q(c.start - len); }, 'Eliminar hueco con ondulación');
+  if (blocked) return toast('No se puede eliminar el hueco: hay clips en otras pistas que lo atraviesan');
+  edit(() => { for (const c of S.clips) if (!S.tracks[c.track].lock && c.start >= g.b - 1e-6) c.start = q(c.start - len); }, 'Eliminar hueco con ondulación');
   S.gap = null; renderTimeline();
 }
 
@@ -125,22 +134,25 @@ function toggleLink(){
   else if (cs.length > 1){ const l = nid('l'); edit(() => cs.forEach(c => c.link = l), 'Vincular'); }
 }
 function toggleEnable(){
-  const cs = [...S.sel].map(clip).filter(Boolean); if (!cs.length) return;
+  const cs = [...S.sel].map(clip).filter(c => c && !S.tracks[c.track].lock); if (!cs.length) return;
   const on = cs.some(c => c.disabled);
   edit(() => cs.forEach(c => c.disabled = !on), on ? 'Habilitar' : 'Deshabilitar');
 }
-function setColor(color){ edit(() => [...S.sel].map(clip).forEach(c => { if (c) c.color = color; }), 'Etiqueta'); }
+function setColor(color){ edit(() => [...S.sel].map(clip).forEach(c => { if (c && !S.tracks[c.track].lock) c.color = color; }), 'Etiqueta'); }
 
 /* ==================================== títulos ==================================== */
-function addTitle(at, track, x, y){
+function addTitle(at, track, x, y, setup, label){
   const t = q(at ?? S.t);
-  let tr = track;
-  if (!tr) tr = ['V2','V3','V1'].find(id => !S.tracks[id].lock && !S.clips.some(c => c.track === id && t < cend(c) && t + 5 > c.start)) || 'V2';
+  let tr = track && !S.tracks[track].lock ? track : null;
+  if (!tr) tr = ['V2','V3','V1'].find(id => !S.tracks[id].lock && !S.clips.some(c => c.track === id && t < cend(c) && t + 5 > c.start))
+    || ['V2','V3','V1'].find(id => !S.tracks[id].lock);
+  if (!tr){ toast('Todas las pistas de vídeo están bloqueadas'); return null; }
   let c = null;
   edit(() => {
     c = newClip('text', null, tr, t, 0, 5); c.props.x = Math.round(x || 0); c.props.y = Math.round(y || 0);
+    if (setup) setup(c);
     S.clips.push(c); overwrite([c.id]); S.sel = new Set([c.id]); S.primary = c.id; S.selTrans = null;
-  }, 'Nuevo título');
+  }, label || 'Nuevo título');
   setTab('fx'); setTool('select'); status('Título añadido en ' + tr);
   return c;
 }
@@ -151,6 +163,7 @@ const ATRANS = {power:'Potencia constante', gain:'Ganancia constante', expo:'Fun
 const TRANS_NAMES = {...VTRANS, ...ATRANS};
 function applyTransition(c, side, type, dur){
   const isA = type in ATRANS;
+  if (S.tracks[c.track].lock){ toast('La pista está bloqueada'); return null; }
   if (isA !== (c.kind === 'audio')){ toast(isA ? 'Las transiciones de audio se aplican a clips de audio' : 'Las transiciones de vídeo se aplican a clips de vídeo, imágenes o títulos'); return null; }
   let target = c, s = side;
   if (side === 'out'){ const n = nextOf(c); if (n){ target = n; s = 'in'; } }
@@ -203,11 +216,20 @@ const FXLIB = {
 };
 function applyEffect(c, type){
   const d = FXLIB[type]; if (!d || !c) return;
+  if (S.tracks[c.track].lock) return toast('La pista está bloqueada');
   if (!!d.audio !== (c.kind === 'audio')) return toast(d.audio ? 'Este efecto se aplica a clips de audio' : 'Este efecto se aplica a clips de vídeo, imágenes o títulos');
   edit(() => { const p = {...(d.opts || {})}; d.params.forEach(r => p[r[1]] = r[6]); c.fx.push({id:nid('f'), type, on:true, p}); }, 'Aplicar ' + d.name);
   S.sel = new Set([c.id]); S.primary = c.id; S.selTrans = null;
   setTab('fx'); renderTimeline(); renderEffects(true);
   status(`${d.name} aplicado`);
+}
+function applyEffectMany(cs, type){
+  const d = FXLIB[type]; if (!d) return;
+  const targets = cs.filter(c => c && !S.tracks[c.track].lock && !!d.audio === (c.kind === 'audio'));
+  if (!targets.length) return toast(d.audio ? 'Selecciona un clip de audio' : 'Selecciona un clip de vídeo');
+  if (targets.length === 1) return applyEffect(targets[0], type);
+  edit(() => targets.forEach(c => { const p = {...(d.opts || {})}; d.params.forEach(r => p[r[1]] = r[6]); c.fx.push({id:nid('f'), type, on:true, p}); }), 'Aplicar ' + d.name);
+  setTab('fx'); status(`${d.name} aplicado a ${targets.length} clips`);
 }
 function removeEffect(c, id){
   edit(() => { c.fx = c.fx.filter(f => f.id !== id); for (const k in c.kf) if (k.startsWith('fx.' + id + '.')) delete c.kf[k]; }, 'Borrar efecto');
@@ -215,32 +237,33 @@ function removeEffect(c, id){
 
 /* =============================== velocidad/duración =============================== */
 function speedDialog(){
-  const cs = [...S.sel].map(clip).filter(Boolean);
+  const cs = [...S.sel].map(clip).filter(c => c && !S.tracks[c.track].lock);
   if (!cs.length) return toast('Selecciona uno o más clips en la línea de tiempo');
   const c0 = cs[0], srcLen = c0.dur * spd(c0);
+  let exact = null;
   const m = modal('Velocidad/duración del clip', `
     <div class="row"><label style="flex:1">Velocidad (%)<input id="spV" type="number" min="1" max="10000" step="1" value="${Math.round(spd(c0) * 100)}"></label>
     <label style="flex:1">Duración<input id="spD" value="${tc(c0.dur)}"></label></div>
     <label class="ck"><input type="checkbox" id="spP"${c0.keepPitch ? ' checked' : ''}> Mantener tono de audio</label>
     <label class="ck"><input type="checkbox" id="spR"> Edición de ondulación, desplazar los clips posteriores</label>`,
     [['Cancelar'], ['Aceptar', m => {
-      const ns = clamp((parseFloat(m.querySelector('#spV').value) || 100) / 100, .01, 100);
+      const ns = exact ?? clamp((parseFloat(m.querySelector('#spV').value) || 100) / 100, .01, 100);
       const pitch = m.querySelector('#spP').checked, ripple = m.querySelector('#spR').checked;
       edit(() => {
-        for (const c of cs){
+        for (const c of [...cs].sort((a, b) => a.start - b.start)){
           const old = spd(c), oldEnd = cend(c), nd = Math.max(1 / FPS, q(c.dur * old / ns)), delta = nd - c.dur;
           scaleKf(c, nd / c.dur);
           c.speed = ns; c.keepPitch = pitch; c.dur = nd;
           if (c.tIn) c.tIn.dur = Math.min(c.tIn.dur, nd);
           if (c.tOut) c.tOut.dur = Math.min(c.tOut.dur, nd);
-          if (ripple) for (const o of S.clips) if (!cs.includes(o) && o.track === c.track && o.start >= oldEnd - 1e-6) o.start = q(o.start + delta);
+          if (ripple) for (const o of S.clips) if (o !== c && o.track === c.track && o.start >= oldEnd - 1e-6) o.start = q(o.start + delta);
         }
         if (!ripple) overwrite(cs.map(c => c.id));
       }, 'Velocidad/duración');
     }, true]]);
   const v = m.querySelector('#spV'), d = m.querySelector('#spD');
-  v.oninput = () => { const ns = (parseFloat(v.value) || 100) / 100; d.value = tc(srcLen / ns); };
-  d.onchange = () => { const nd = parseTCInput(d.value); if (nd > 0){ v.value = Math.round(srcLen / nd * 100); d.value = tc(nd); } };
+  v.oninput = () => { exact = null; const ns = (parseFloat(v.value) || 100) / 100; d.value = tc(srcLen / ns); };
+  d.onchange = () => { const nd = parseTCInput(d.value); if (nd > 0){ exact = clamp(srcLen / nd, .01, 100); v.value = Math.round(exact * 100); d.value = tc(nd); } };
 }
 
 /* =================================== marcadores =================================== */
@@ -391,15 +414,13 @@ const GFX_TEMPLATES = {
 };
 function addTemplate(key, at, track){
   const tp = GFX_TEMPLATES[key]; if (!tp) return;
-  const c = addTitle(at, track);
-  if (!c) return;
-  const k = clip(c.id);
-  edit(() => {
+  const c = addTitle(at, track, 0, 0, k => {
     Object.assign(k.props, tp.props);
     const scale = Math.min(1, S.seq.w / 1920);
     if (scale < 1){ k.props.size = Math.round(k.props.size * scale); k.props.x = Math.round((k.props.x || 0) * scale); k.props.y = Math.round((k.props.y || 0) * scale); }
     k.tIn = {type:'dissolve', dur:q(.5)}; k.tOut = {type:'dissolve', dur:q(.5)};
   }, 'Plantilla: ' + tp.name);
+  if (!c) return;
   status('Plantilla añadida: ' + tp.name);
 }
 

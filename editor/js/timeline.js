@@ -208,7 +208,10 @@ function onTracksDown(e){
     else edit(() => splitClipAt(c, tt, !e.altKey), 'Cuchilla');
     status('Cortado en ' + tc(tt)); return;
   }
-  if (e.shiftKey || e.ctrlKey || e.metaKey){ S.sel.has(c.id) ? S.sel.delete(c.id) : S.sel.add(c.id); }
+  if (e.shiftKey || e.ctrlKey || e.metaKey){
+    if (S.sel.has(c.id)){ linkedIds(c, e).forEach(id => S.sel.delete(id)); if (S.primary === c.id) S.primary = null; renderTimeline(); renderEffects(); return; }
+    S.sel.add(c.id);
+  }
   else if (!S.sel.has(c.id)){ S.sel.clear(); S.sel.add(c.id); }
   S.selTrans = null;
   if (!e.altKey) expandLinked();
@@ -254,8 +257,14 @@ function onVolLine(e, cEl, c){
   const r = cEl.getBoundingClientRect(), h = TH - 18, y = e.clientY - r.top - 15;
   return Math.abs(y - (h - clamp(c.props.volume / 200, 0, 1) * h)) < 5;
 }
+function dragAlive(){
+  if (!drag) return false;
+  const ids = drag.orig ? drag.orig.map(o => o.id) : drag.pairs ? drag.pairs.flatMap(p => [p.a, p.b]) : drag.c ? [drag.c.id] : [];
+  if (ids.some(id => !clip(id))){ drag = null; $('#snapLine').style.display = 'none'; renderTimeline(); return false; }
+  return true;
+}
 function onMove(e){
-  if (!drag) return;
+  if (!dragAlive()) return;
   if (drag.mode === 'hand'){ tracksEl.scrollLeft = drag.sl - (e.clientX - drag.x0); tracksEl.scrollTop = drag.st - (e.clientY - drag.y0); return; }
   if (!drag.moved && Math.abs(e.clientX - drag.x0) < 3 && Math.abs(e.clientY - drag.y0 || 0) < 5) return;
   drag.moved = true;
@@ -266,7 +275,7 @@ function onMove(e){
     case 'roll': snapAt = dragRoll(d); break;
     case 'slip': dragSlip(d); break;
     case 'vol': { const h = TH - 18; drag.c.props.volume = clamp(Math.round(drag.v0 - (e.clientY - drag.y0) / h * 200), 0, 400); status('Nivel de volumen: ' + dbStr(drag.c.props.volume / 100)); break; }
-    case 'transDur': { const c = drag.c, tr = drag.side === 'in' ? c.tIn : c.tOut; if (tr){ tr.dur = q(clamp(drag.d0 + (drag.side === 'in' ? d : -d), 1 / FPS, c.dur)); status('Duración de la transición: ' + tc(tr.dur)); } break; }
+    case 'transDur': { if (S.tracks[drag.c.track].lock) break; const c = drag.c, tr = drag.side === 'in' ? c.tIn : c.tOut; if (tr){ tr.dur = q(clamp(drag.d0 + (drag.side === 'in' ? d : -d), 1 / FPS, c.dur)); status('Duración de la transición: ' + tc(tr.dur)); } break; }
   }
   const sl = $('#snapLine');
   if (snapAt != null){ sl.style.display = 'block'; sl.style.left = snapAt * S.zoom + 'px'; } else sl.style.display = 'none';
@@ -344,9 +353,9 @@ function dragRoll(d){
   d = lo > hi ? 0 : clamp(d, lo, hi);
   for (const p of drag.pairs){
     const A = clip(p.a), B = clip(p.b);
-    A.dur = q(p.aDur + d);
+    A.dur = q(p.aDur + d); clampTrans(A);
     B.start = q(p.bStart + d); B.in = mediaBased(B) ? Math.max(0, p.bIn + d * spd(B)) : 0; B.dur = q(p.bDur - d);
-    B.kf = JSON.parse(p.bKf); shiftKf(B, -d);
+    B.kf = JSON.parse(p.bKf); shiftKf(B, -d); clampTrans(B);
   }
   status(`Edición de rodillo: ${d >= 0 ? '+' : '-'}${tc(Math.abs(d))}`);
   return r.at;
@@ -364,7 +373,7 @@ function dragSlip(d){
   status(`Desplazar · Entrada ${tc(k.in)} · Salida ${tc(k.in + k.dur * spd(k))}`);
 }
 function onUp(){
-  if (!drag) return;
+  if (!dragAlive()) return;
   $('#snapLine').style.display = 'none';
   const labels = {move:'Mover', roll:'Edición de rodillo', slip:'Desplazar', vol:'Nivel de volumen', transDur:'Duración de la transición'};
   if (drag.moved && drag.mode !== 'hand'){
@@ -408,7 +417,7 @@ async function onDrop(e){
 
 /* ============================== menú contextual ============================== */
 function onTracksCtx(e){
-  e.preventDefault();
+  e.preventDefault(); FOCUS = 'timeline'; focusUI();
   const cEl = e.target.closest('.clip'), trEl = e.target.closest('.trans');
   if (trEl && cEl){
     S.selTrans = {id:cEl.dataset.id, side:trEl.dataset.side}; S.sel.clear(); renderTimeline(); renderEffects(true);

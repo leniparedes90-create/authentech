@@ -79,7 +79,7 @@ function sync(){
     const n = nextOf(c), e = cend(c) + (n && n.tIn ? n.tIn.dur : 0);
     const active = !c.disabled && t >= c.start - 1e-4 && t < e;
     const near = t >= c.start - 3 && t < e;
-    if (!near && !ELS.has(c.id)) continue;
+    if (!near){ if (ELS.has(c.id) && (t < c.start - 6 || t > e + 2)) dropEl(c.id); continue; }
     const r = elFor(c); if (!r) continue;
     const el = r.el, m = media(c.mediaId), rate = clamp(spd(c) * boost, .0625, 16);
     if (Math.abs(el.playbackRate - rate) > 1e-3) el.playbackRate = rate;
@@ -168,7 +168,19 @@ function drawClip(g, c, t, o = {}){
   }
   const r = elFor(c), el = r && r.el;
   const sw = el ? (el.videoWidth || el.naturalWidth) : 0, sh = el ? (el.videoHeight || el.naturalHeight) : 0;
-  if (!el || !sw || (el.tagName === 'VIDEO' && el.readyState < 2)){ g.restore(); return; }
+  if (!el || !sw){ g.restore(); return; }
+  // Mientras el vídeo busca (readyState < 2) se dibuja el último fotograma bueno en lugar de negro
+  let src = el;
+  if (el.tagName === 'VIDEO'){
+    if (el.readyState >= 2){
+      if (!S.playing || EXPORT || TICK % 3 === 0){
+        if (!r.last) r.last = document.createElement('canvas');
+        if (r.last.width !== sw || r.last.height !== sh){ r.last.width = sw; r.last.height = sh; }
+        r.last.getContext('2d').drawImage(el, 0, 0);
+      }
+    } else if (r.last && r.last.width === sw) src = r.last;
+    else { g.restore(); return; }
+  }
   const fit = Math.min(W / sw, H / sh) * k, sc = CV.width / W, f = [];
   const lu = fxOn(c, 'lumetri');
   if (lu){
@@ -194,9 +206,9 @@ function drawClip(g, c, t, o = {}){
       const mo = fxOn(c, 'mosaic');
       if (mo){
         const bw = Math.max(1, Math.round(fv(c, mo, 'blocks', t))), bh = Math.max(1, Math.round(bw * sH / sW));
-        OFF.width = bw; OFF.height = bh; OFF.getContext('2d').drawImage(el, sx, sy, sW, sH, 0, 0, bw, bh);
+        OFF.width = bw; OFF.height = bh; OFF.getContext('2d').drawImage(src, sx, sy, sW, sH, 0, 0, bw, bh);
         ctx.imageSmoothingEnabled = false; ctx.drawImage(OFF, X, Y, dw, dh); ctx.imageSmoothingEnabled = true;
-      } else ctx.drawImage(el, sx, sy, sW, sH, X, Y, dw, dh);
+      } else ctx.drawImage(src, sx, sy, sW, sH, X, Y, dw, dh);
       if (lu){
         ctx.filter = 'none';
         const temp = fv(c, lu, 'temp', t), vig = fv(c, lu, 'vig', t);
@@ -214,7 +226,8 @@ function drawClip(g, c, t, o = {}){
       }
     };
     const masks = c.fx.filter(m => m.on && m.type === 'mask');
-    if (!masks.length) paint(g, x0, y0);
+    const tint = lu && (fv(c, lu, 'temp', t) || fv(c, lu, 'vig', t));
+    if (!masks.length && !tint) paint(g, x0, y0);
     else {
       // Máscaras de opacidad: se pinta el clip en un lienzo aparte y se recorta con la unión de las máscaras
       const pr = Math.max(.02, Math.min(sc, 4096 / Math.max(dw, dh)));
@@ -237,7 +250,8 @@ function drawClip(g, c, t, o = {}){
       if (!pos.length){ kg.filter = 'none'; kg.fillStyle = '#000'; kg.fillRect(0, 0, dw, dh); }
       pos.forEach(m => shape(m));
       kg.globalCompositeOperation = 'destination-out'; neg.forEach(m => shape(m)); kg.globalCompositeOperation = 'source-over'; kg.filter = 'none';
-      mg.setTransform(1, 0, 0, 1, 0, 0); mg.globalCompositeOperation = 'destination-in'; mg.drawImage(MM, 0, 0); mg.globalCompositeOperation = 'source-over';
+      mg.setTransform(1, 0, 0, 1, 0, 0);
+      if (masks.length){ mg.globalCompositeOperation = 'destination-in'; mg.drawImage(MM, 0, 0); mg.globalCompositeOperation = 'source-over'; }
       g.filter = 'none'; g.drawImage(MK, x0, y0, dw, dh);
     }
   }
